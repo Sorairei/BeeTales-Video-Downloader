@@ -76,7 +76,11 @@ python -m pip install -r requirements.txt
 python app.py
 ```
 
-Para descargar o convertir desde el código fuente también deben estar disponibles `ffmpeg`, `ffprobe` y Deno en `PATH`, o dentro de `vendor/`.
+Para descargar o convertir desde el código fuente también deben estar disponibles `ffmpeg`, `ffprobe` y Deno en `PATH`, o dentro de `vendor/`. En Windows puedes descargarlos desde sus releases oficiales y verificar sus hashes automáticamente con:
+
+```powershell
+.\download_runtimes.ps1
+```
 
 ## Arquitectura
 
@@ -89,7 +93,8 @@ Para descargar o convertir desde el código fuente también deben estar disponib
 | `release_smoke.py` | Validación integral de recursos, dependencias y configuración |
 | `test_downloader.py` | Pruebas de URLs, formatos y privacidad de preferencias |
 | `assets/` | Logo, mascota, iconos y recursos visuales |
-| `build_release.ps1` | Pruebas, compilación y validación del ejecutable |
+| `download_runtimes.ps1` | Descarga local y verificación SHA-256 de FFmpeg y Deno |
+| `build_release.ps1` | Pruebas, compilación y validación local del ejecutable |
 | `.github/workflows/` | CI y creación automática de GitHub Releases |
 | `legacy-web/` | Prototipo web conservado únicamente como referencia histórica |
 
@@ -106,13 +111,16 @@ Las pruebas no realizan descargas reales ni contactan las plataformas. La valida
 
 ## Compilar para Windows
 
-Coloca versiones oficiales de `ffmpeg.exe`, `ffprobe.exe` y `deno.exe` dentro de `vendor/`, crea `.venv-build`, instala las dependencias y ejecuta:
+Prepara las herramientas oficiales, crea `.venv-build`, instala las dependencias y ejecuta:
 
 ```powershell
+.\download_runtimes.ps1
+py -3.12 -m venv .venv-build
+.\.venv-build\Scripts\python.exe -m pip install -r requirements.txt
 .\build_release.ps1
 ```
 
-La automatización de GitHub descarga estas herramientas desde los proyectos oficiales, compila el ejecutable, ejecuta la validación integral y crea un ZIP. Las licencias se describen en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+`build_release.ps1` ejecuta localmente las pruebas, valida Tcl/Tk y las herramientas multimedia, compila el ejecutable, realiza un smoke test y genera `dist/BeeTales-Video-Downloader-Windows-x64.zip` con su hash SHA-256. Las licencias se describen en [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Uso responsable
 

@@ -4,6 +4,8 @@ $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $python = if ($env:BUILD_PYTHON) { $env:BUILD_PYTHON } else { Join-Path $projectRoot ".venv-build\Scripts\python.exe" }
 $vendor = Join-Path $projectRoot "vendor"
 $executable = Join-Path $projectRoot "dist\BeeTales Video Downloader.exe"
+$archive = Join-Path $projectRoot "dist\BeeTales-Video-Downloader-Windows-x64.zip"
+$packageStaging = Join-Path $projectRoot "build\release-package"
 
 if (-not (Test-Path -LiteralPath $python)) {
     throw "No existe .venv-build. Crea el entorno con Python 3.12 e instala requirements.txt."
@@ -55,7 +57,16 @@ try {
     $process = Start-Process -FilePath $executable -ArgumentList "--smoke-test" -Wait -PassThru -WindowStyle Hidden
     if ($process.ExitCode -ne 0) { throw "El ejecutable no superó la validación integral." }
 
+    Write-Host "Creando paquete local..."
+    New-Item -ItemType Directory -Path $packageStaging -Force | Out-Null
+    Copy-Item -LiteralPath $executable -Destination $packageStaging -Force
+    Copy-Item -LiteralPath "LICENSE", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "USAGE_POLICY.md" -Destination $packageStaging -Force
+    Compress-Archive -Path (Join-Path $packageStaging "*") -DestinationPath $archive -Force
+    $archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+
     Write-Host "Ejecutable listo: $executable"
+    Write-Host "Paquete listo: $archive"
+    Write-Host "SHA-256: $archiveHash"
 }
 finally {
     Pop-Location
