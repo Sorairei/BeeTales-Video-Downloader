@@ -3,7 +3,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 import json
+import socket
 from pathlib import Path
+from unittest.mock import patch
 
 from accessibility import KEYBOARD_SHORTCUTS, keyboard_help_text
 from downloader import (
@@ -15,6 +17,7 @@ from downloader import (
     build_analysis_options,
     build_download_options,
     safe_error_message,
+    _validate_thumbnail_url,
     validate_url,
 )
 from settings import Settings, load_settings, save_settings
@@ -70,6 +73,17 @@ class UrlValidationTests(unittest.TestCase):
         result = validate_url("https://WWW.YouTube.com:443/watch?v=example#comments")
         self.assertEqual(result.url, "https://www.youtube.com/watch?v=example")
 
+    @patch("downloader.socket.getaddrinfo")
+    def test_thumbnail_requires_public_https_address(self, getaddrinfo) -> None:
+        getaddrinfo.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+        self.assertEqual(
+            _validate_thumbnail_url("https://images.example.com/cover.jpg"),
+            "https://images.example.com/cover.jpg",
+        )
+        getaddrinfo.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
+        with self.assertRaises(ValidationError):
+            _validate_thumbnail_url("https://localhost/cover.jpg")
+
 
 class OptionTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -99,6 +113,32 @@ class OptionTests(unittest.TestCase):
         request = DownloadRequest("https://youtu.be/x", "video", Path("C:/Downloads"), quality=640)
         options = build_download_options(request, self.tools)
         self.assertIn("height<=?640", options["format"])
+
+    def test_instagram_1280_prefers_combined_mp4_before_vp9_fallback(self) -> None:
+        request = DownloadRequest(
+            "https://www.instagram.com/reel/example/",
+            "video",
+            Path("C:/Downloads"),
+            quality=1280,
+        )
+        format_selector = build_download_options(request, self.tools)["format"]
+        combined = "best[height<=?1280][ext=mp4]"
+        generic_split = "bestvideo*[height<=?1280][ext=mp4]+bestaudio[ext=m4a]"
+        self.assertLess(format_selector.index(combined), format_selector.index(generic_split))
+
+    def test_instagram_1920_preserves_high_resolution_fallback(self) -> None:
+        request = DownloadRequest(
+            "https://www.instagram.com/reel/example/",
+            "video",
+            Path("C:/Downloads"),
+            quality=1920,
+        )
+        format_selector = build_download_options(request, self.tools)["format"]
+        generic_split = "bestvideo*[height<=?1920][ext=mp4]+bestaudio[ext=m4a]"
+        combined_fallback = "best[height<=?1920][ext=mp4]"
+        self.assertLess(
+            format_selector.index(generic_split), format_selector.index(combined_fallback)
+        )
 
     def test_audio_uses_mp3_and_selected_bitrate(self) -> None:
         request = DownloadRequest(
@@ -218,6 +258,18 @@ class QueueManagerTests(unittest.TestCase):
         first = self._request(Path("C:/Media/../Media"))
         second = self._request(Path("C:/Media"))
         self.assertEqual(request_identity(first), request_identity(second))
+
+    def test_remove_finished_preserves_active_jobs(self) -> None:
+        manager = QueueManager()
+        completed = manager.create("Completed", self._request(Path("C:/Media"), 720))
+        active = manager.create("Active", self._request(Path("C:/Media"), 1080))
+        self.assertTrue(manager.start(completed.job_id))
+        manager.finish(completed.job_id, "completed")
+        self.assertTrue(manager.start(active.job_id))
+        self.assertEqual(manager.remove_finished(), (completed.job_id,))
+        self.assertIsNone(manager.get(completed.job_id))
+        self.assertIs(manager.get(active.job_id), active)
+        self.assertEqual(manager.total_count, 1)
 
 
 class ReleaseMetadataTests(unittest.TestCase):

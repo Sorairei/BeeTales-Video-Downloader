@@ -22,7 +22,10 @@ MIDNIGHT_RAISED = "#10251A"
 APP_BACKGROUND: Color = ("#F3F6F1", "#070A08")
 SURFACE: Color = ("#FFFFFF", "#111713")
 SURFACE_ALT: Color = ("#F7FAF5", "#172019")
+SURFACE_ELEVATED: Color = ("#FFFFFF", "#141D17")
 BORDER: Color = ("#DDE7D8", "#29362C")
+BORDER_STRONG: Color = ("#C8D8C2", "#36503C")
+ACCENT_SOFT: Color = ("#E7F5D8", "#17351F")
 TEXT: Color = ("#172018", "#F4F8F2")
 TEXT_MUTED: Color = ("#637063", "#A8B3A7")
 SIDEBAR_TEXT = "#F2F7EF"
@@ -63,13 +66,22 @@ def audited_contrast_pairs() -> dict[str, float]:
         "primary_button": ("#071008", PRIMARY),
         "sponsor_button": ("#FFFFFF", SPONSOR),
     }
-    surfaces = {"background": APP_BACKGROUND, "surface": SURFACE, "surface_alt": SURFACE_ALT}
+    surfaces = {
+        "background": APP_BACKGROUND,
+        "surface": SURFACE,
+        "surface_alt": SURFACE_ALT,
+        "surface_elevated": SURFACE_ELEVATED,
+    }
     for mode in ("light", "dark"):
         for surface_name, surface_color in surfaces.items():
             background = resolved(surface_color, mode)
             colors[f"text_{mode}_{surface_name}"] = (resolved(TEXT, mode), background)
             colors[f"muted_{mode}_{surface_name}"] = (resolved(TEXT_MUTED, mode), background)
         colors[f"accent_{mode}"] = (resolved(ACCENT_TEXT, mode), resolved(SURFACE, mode))
+        colors[f"accent_soft_{mode}"] = (
+            resolved(ACCENT_TEXT, mode),
+            resolved(ACCENT_SOFT, mode),
+        )
         colors[f"segment_selected_{mode}"] = (
             resolved(TEXT, mode),
             resolved(SEGMENT_SELECTED, mode),

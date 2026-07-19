@@ -19,6 +19,8 @@ from downloader import (
     build_analysis_options,
     build_download_options,
     detect_tools,
+    ensure_compatible_mp4,
+    probe_media_file,
     require_media_tools,
     validate_url,
 )
@@ -113,6 +115,7 @@ def _validate_media_pipeline(tools: ToolPaths) -> None:
         directory = Path(name)
         video = directory / "synthetic.mp4"
         audio = directory / "synthetic.mp3"
+        vp9_video = directory / "synthetic-vp9.mp4"
         _run_tool(
             [
                 str(tools.ffmpeg),
@@ -173,6 +176,38 @@ def _validate_media_pipeline(tools: ToolPaths) -> None:
             any(item.get("codec_type") == "audio" and item.get("codec_name") == "mp3" for item in streams),
             "La conversion sintetica no produjo audio MP3",
         )
+        _run_tool(
+            [
+                str(tools.ffmpeg),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=24:duration=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=800:duration=1",
+                "-c:v",
+                "libvpx-vp9",
+                "-crf",
+                "35",
+                "-b:v",
+                "0",
+                "-c:a",
+                "aac",
+                "-shortest",
+                str(vp9_video),
+            ],
+            "creacion VP9 de compatibilidad",
+        )
+        _require(ensure_compatible_mp4(vp9_video, tools), "El VP9 sintetico no fue convertido")
+        compatible = probe_media_file(vp9_video, tools)
+        _require(compatible.video_codec == "h264", "La conversion final no produjo H.264")
+        _require(compatible.audio_codec == "aac", "La conversion final no produjo AAC")
+        _require(compatible.pixel_format == "yuv420p", "El formato de pixel final no es compatible")
 
 
 def run_release_smoke_test(root: str | Path | None = None) -> dict[str, Any]:

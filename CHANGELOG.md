@@ -14,11 +14,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Documented keyboard shortcuts for URL focus, analysis, queueing, destination selection, and help.
 - Automated WCAG AA contrast validation for normal-size text in light and dark themes.
+- In-memory public thumbnail previews for YouTube, TikTok, Instagram, and X.
+- A queue cleanup action that removes completed, cancelled, and failed items without affecting active jobs.
+- Final MP4 probing and automatic local H.264/AAC compatibility conversion when required.
 
 ### Changed
 
 - Expanded and standardized privacy, security, acceptable-use, and contribution documentation in English.
 - Improved success and error colors with theme-specific accessible variants.
+- Reorganized the desktop workspace into a clearer three-step premium BeeTales experience.
+- Preferred Instagram's combined H.264/AAC formats at compatible vertical resolutions to avoid VP9-in-MP4 playback issues.
+
+### Security
+
+- Restricted thumbnail retrieval to public HTTPS addresses, validated every redirect, limited responses to 5 MB, and kept image data in memory only.
 
 ## [0.3.0] - 2026-07-19
 

@@ -65,7 +65,10 @@ Processing runs on the user's computer through yt-dlp, FFmpeg, FFprobe, and Deno
 | Audio | MP3 output at 128, 192, 256, or 320 kbps |
 | Quality | Real source heights are detected, including non-standard vertical resolutions |
 | Compatibility | H.264 video and AAC audio are preferred, with automatic format fallbacks |
+| Final validation | Completed MP4 files are probed and incompatible VP9, AV1, HEVC, audio, or pixel formats are converted locally |
 | Queue | Sequential downloads with per-item progress, speed, remaining time, and cancellation |
+| Queue cleanup | Completed, cancelled, and failed items can be removed without interrupting active jobs |
+| Preview | Public thumbnails are loaded temporarily in memory to confirm the selected media |
 | Reliability | Active duplicates are rejected and application shutdown waits for local operations |
 | Privacy | Destination and appearance preferences are local; URLs and download history are not stored |
 | Interface | Branded BeeTales desktop experience with light, dark, and system appearance modes |
@@ -92,11 +95,12 @@ Spotify, bulk downloads, playlists, private content, accounts, cookies, payment 
 1. The user pastes a supported public-media URL.
 2. The application validates the HTTPS host and individual-content route locally.
 3. yt-dlp reads public metadata and reports the source formats without adding a playlist.
-4. The user selects MP4 or MP3, chooses a quality, confirms authorization, and selects a destination.
-5. The request enters a sequential in-memory queue that rejects active duplicates.
-6. yt-dlp downloads directly from the public platform to the selected local folder.
-7. FFmpeg merges or converts the media and adds metadata locally.
-8. The completed item can open its destination folder from the queue.
+4. A temporary public thumbnail, title, creator, and duration help confirm the selected media.
+5. The user selects MP4 or MP3, chooses a quality, confirms authorization, and selects a destination.
+6. The request enters a sequential in-memory queue that rejects active duplicates.
+7. yt-dlp downloads directly from the public platform to the selected local folder.
+8. FFmpeg merges, validates, or converts the media and adds metadata locally.
+9. The completed item can open its destination folder or be cleared from the queue.
 
 Cancelling signals the active job through yt-dlp progress and post-processing hooks. Closing the application asks for confirmation when operations are active, cancels the queue, and waits for local workers before exiting.
 
@@ -105,6 +109,7 @@ Cancelling signals the active job through yt-dlp progress and post-processing ho
 | Concern | Behavior |
 | --- | --- |
 | Source URLs | Used in memory for the current session and never added to settings or history |
+| Public thumbnails | Validated as public HTTPS images, limited to 5 MB, displayed from memory, and never persisted |
 | Downloaded media | Written directly to the user-selected local directory |
 | Preferences | Only destination and appearance are stored in a local JSON file |
 | Accounts and authentication | Not used |
@@ -150,6 +155,8 @@ flowchart LR
 - Partial downloads use yt-dlp's resumable behavior when supported by the platform.
 - Downloads are limited to two hours and 2 GB per item.
 - Video selection prefers H.264 and AAC for broad MP4 compatibility before trying fallback formats.
+- Instagram prefers its combined H.264/AAC MP4 at compatible vertical resolutions instead of remuxing VP9 into MP4.
+- Every completed video is probed; incompatible codecs or pixel formats are converted to H.264/AAC `yuv420p` before completion.
 - Real source heights between 144p and 4320p are preserved in the quality selector.
 - Private, removed, regional, DRM-protected, rate-limited, non-video, and network failures receive safe user-facing messages.
 - Queue contents exist only for the active application session and are never written to history.

@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import json
+import ipaddress
+import os
 import re
 import shutil
+import socket
+import subprocess
 import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal
 from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 SUPPORTED_HEIGHTS = (360, 480, 720, 1080, 1440, 2160)
@@ -17,6 +23,7 @@ SUPPORTED_BITRATES = (128, 192, 256, 320)
 MAX_URL_LENGTH = 2048
 MAX_DURATION_SECONDS = 2 * 60 * 60
 MAX_FILESIZE_BYTES = 2 * 1024 * 1024 * 1024
+MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024
 
 
 class DownloaderError(RuntimeError):
@@ -86,6 +93,16 @@ class ProgressEvent:
     eta: int | None = None
     filename: str = ""
     message: str = ""
+
+
+@dataclass(frozen=True)
+class FileMediaInfo:
+    video_codec: str
+    pixel_format: str
+    audio_codec: str
+    width: int | None
+    height: int | None
+    duration: float | None
 
 
 @dataclass(frozen=True)
@@ -176,6 +193,67 @@ def validate_url(value: str) -> ValidatedUrl:
 
     normalized = urlunsplit(("https", hostname, parts.path or "/", parts.query, ""))
     return ValidatedUrl(normalized, platform)
+
+
+def _validate_thumbnail_url(value: str) -> str:
+    try:
+        parts = urlsplit(value)
+        port = parts.port
+    except (TypeError, ValueError) as exc:
+        raise ValidationError("La portada no utiliza un enlace válido.") from exc
+    if (
+        parts.scheme.lower() != "https"
+        or not parts.hostname
+        or parts.username
+        or parts.password
+        or port not in (None, 443)
+    ):
+        raise ValidationError("La portada debe usar un enlace HTTPS público.")
+    try:
+        addresses = socket.getaddrinfo(parts.hostname, 443, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise DownloaderError("No fue posible localizar la portada pública.") from exc
+    if not addresses:
+        raise DownloaderError("La portada pública no tiene una dirección disponible.")
+    for address in addresses:
+        try:
+            if not ipaddress.ip_address(address[4][0]).is_global:
+                raise ValidationError("La portada apunta a una red no permitida.")
+        except ValueError as exc:
+            raise ValidationError("La portada contiene una dirección no válida.") from exc
+    return value
+
+
+class _PublicThumbnailRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_thumbnail_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def fetch_thumbnail(value: str | None) -> bytes | None:
+    """Download a small public thumbnail without persisting it."""
+
+    if not value:
+        return None
+    _validate_thumbnail_url(value)
+    request = Request(value, headers={"User-Agent": "BeeTales-Video-Downloader/0.3"})
+    try:
+        with build_opener(_PublicThumbnailRedirectHandler()).open(request, timeout=15) as response:
+            _validate_thumbnail_url(response.geturl())
+            content_type = str(response.headers.get("Content-Type", "")).lower()
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > MAX_THUMBNAIL_BYTES:
+                raise DownloaderError("La portada pública es demasiado grande.")
+            if content_type and not content_type.startswith("image/"):
+                raise DownloaderError("La portada pública no contiene una imagen.")
+            payload = response.read(MAX_THUMBNAIL_BYTES + 1)
+    except DownloaderError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise DownloaderError("No fue posible descargar la portada pública.") from exc
+    if len(payload) > MAX_THUMBNAIL_BYTES:
+        raise DownloaderError("La portada pública es demasiado grande.")
+    return payload or None
 
 
 def _find_executable(name: str, root: Path) -> Path | None:
@@ -280,12 +358,19 @@ def build_download_options(
             }
         )
     else:
+        platform_id = validate_url(request.url).platform.id
+        instagram_combined = (
+            f"best[height<=?{quality}][ext=mp4]/"
+            if platform_id == "instagram" and quality <= 1280
+            else ""
+        )
         options.update(
             {
                 "format": (
                     f"bestvideo[height<=?{quality}][vcodec^=avc1][ext=mp4]"
                     "+bestaudio[acodec^=mp4a][ext=m4a]/"
                     f"best[height<=?{quality}][vcodec^=avc1][acodec^=mp4a][ext=mp4]/"
+                    f"{instagram_combined}"
                     f"bestvideo*[height<=?{quality}][ext=mp4]+bestaudio[ext=m4a]/"
                     f"best[height<=?{quality}][ext=mp4]/"
                     f"bestvideo*[height<=?{quality}]+bestaudio/best[height<=?{quality}]"
@@ -298,6 +383,137 @@ def build_download_options(
             }
         )
     return options
+
+
+def probe_media_file(path: Path, paths: ToolPaths) -> FileMediaInfo:
+    if not paths.ffprobe:
+        raise DependencyError("FFprobe no está disponible para validar el archivo final.")
+    try:
+        result = subprocess.run(
+            [
+                str(paths.ffprobe),
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_name,codec_type,pix_fmt,width,height:format=duration",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        )
+        payload = json.loads(result.stdout) if result.returncode == 0 else {}
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError) as exc:
+        raise DownloaderError("No fue posible validar el archivo multimedia final.") from exc
+    streams = payload.get("streams") if isinstance(payload, dict) else None
+    if not isinstance(streams, list):
+        raise DownloaderError("El archivo final no contiene pistas multimedia válidas.")
+    video = next(
+        (item for item in streams if isinstance(item, dict) and item.get("codec_type") == "video"),
+        {},
+    )
+    audio = next(
+        (item for item in streams if isinstance(item, dict) and item.get("codec_type") == "audio"),
+        {},
+    )
+    if not video:
+        raise DownloaderError("El archivo final no contiene una pista de video válida.")
+    duration_value = (payload.get("format") or {}).get("duration")
+    try:
+        duration = float(duration_value) if duration_value is not None else None
+    except (TypeError, ValueError):
+        duration = None
+    return FileMediaInfo(
+        video_codec=str(video.get("codec_name") or "").lower(),
+        pixel_format=str(video.get("pix_fmt") or "").lower(),
+        audio_codec=str(audio.get("codec_name") or "").lower(),
+        width=int(video["width"]) if isinstance(video.get("width"), (int, float)) else None,
+        height=int(video["height"]) if isinstance(video.get("height"), (int, float)) else None,
+        duration=duration,
+    )
+
+
+def ensure_compatible_mp4(
+    path: Path,
+    paths: ToolPaths,
+    callback: ProgressCallback | None = None,
+) -> bool:
+    """Transcode only when the final MP4 is not broadly compatible."""
+
+    require_media_tools(paths)
+    details = probe_media_file(path, paths)
+    compatible_video = details.video_codec == "h264" and details.pixel_format in {
+        "yuv420p",
+        "yuvj420p",
+    }
+    compatible_audio = details.audio_codec in {"", "aac"}
+    if compatible_video and compatible_audio:
+        return False
+
+    if callback:
+        callback(
+            ProgressEvent(
+                "processing",
+                99.0,
+                message="Convirtiendo a H.264/AAC para máxima compatibilidad…",
+            )
+        )
+    temporary = path.with_name(f".{path.stem}.beetales-compatible.mp4")
+    temporary.unlink(missing_ok=True)
+    try:
+        result = subprocess.run(
+            [
+                str(paths.ffmpeg),
+                "-nostdin",
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(path),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a:0?",
+                "-map_metadata",
+                "0",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "20",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+                str(temporary),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=None,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        )
+        if result.returncode:
+            raise DownloaderError("FFmpeg no pudo crear un MP4 compatible con este contenido.")
+        converted = probe_media_file(temporary, paths)
+        if converted.video_codec != "h264" or converted.pixel_format != "yuv420p":
+            raise DownloaderError("La validación del MP4 compatible no fue satisfactoria.")
+        if converted.audio_codec not in {"", "aac"}:
+            raise DownloaderError("La pista de audio final no es compatible con MP4.")
+        os.replace(temporary, path)
+        return True
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _load_yt_dlp():
@@ -484,6 +700,20 @@ def download_media(
     try:
         notify(ProgressEvent("starting", 0.0, message="Preparando descarga…"))
         with yt_dlp.YoutubeDL(options) as client:
+            if request.output_type == "video":
+                from yt_dlp.postprocessor.common import PostProcessor
+
+                class EnsureCompatibleMP4PostProcessor(PostProcessor):
+                    def run(self, info: dict):
+                        filepath = Path(str(info.get("filepath", "")))
+                        if not filepath.is_file():
+                            raise DownloaderError("No se encontró el archivo final para validarlo.")
+                        ensure_compatible_mp4(filepath, tools, notify)
+                        return [], info
+
+                client.add_post_processor(
+                    EnsureCompatibleMP4PostProcessor(client), when="after_move"
+                )
             result = client.download([validated.url])
         if result:
             raise DownloaderError("yt-dlp no pudo completar la descarga.")

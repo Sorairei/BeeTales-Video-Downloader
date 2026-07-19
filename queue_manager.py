@@ -97,6 +97,25 @@ class QueueManager:
         with self._lock:
             return sum(job.state not in FINAL_STATES for job in self._jobs.values())
 
+    @property
+    def finished_count(self) -> int:
+        with self._lock:
+            return sum(job.state in FINAL_STATES for job in self._jobs.values())
+
+    @property
+    def total_count(self) -> int:
+        with self._lock:
+            return len(self._jobs)
+
+    def remove_finished(self) -> tuple[int, ...]:
+        with self._lock:
+            identifiers = tuple(
+                job_id for job_id, job in self._jobs.items() if job.state in FINAL_STATES
+            )
+            for job_id in identifiers:
+                del self._jobs[job_id]
+            return identifiers
+
     def _finish_locked(
         self, job: QueueJob, state: Literal["completed", "cancelled", "failed"]
     ) -> None:

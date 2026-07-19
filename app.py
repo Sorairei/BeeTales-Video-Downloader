@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import webbrowser
+from io import BytesIO
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Any
@@ -23,7 +24,7 @@ if "--smoke-test" in sys.argv:
     raise SystemExit(0)
 
 import customtkinter as ctk
-from PIL import Image
+from PIL import Image, ImageOps
 
 from accessibility import keyboard_help_text
 from downloader import (
@@ -35,6 +36,7 @@ from downloader import (
     analyze_media,
     detect_tools,
     download_media,
+    fetch_thumbnail,
 )
 from settings import Settings, load_settings, save_settings
 from queue_manager import DuplicateJobError, QueueJob, QueueManager
@@ -42,7 +44,9 @@ from release_metadata import APP_VERSION
 from theme import (
     APP_BACKGROUND,
     ACCENT_TEXT,
+    ACCENT_SOFT,
     BORDER,
+    BORDER_STRONG,
     DANGER,
     DANGER_HOVER,
     FONT_FAMILY,
@@ -61,12 +65,14 @@ from theme import (
     SUCCESS,
     SURFACE,
     SURFACE_ALT,
+    SURFACE_ELEVATED,
     TEXT,
     TEXT_MUTED,
 )
 
 
 SPONSOR_URL = "https://github.com/sponsors/Sorairei"
+CARD_RADIUS = 16
 
 
 def resource_path(relative: str) -> Path:
@@ -96,7 +102,13 @@ def format_speed(value: float | None) -> str:
 
 class QueueCard(ctk.CTkFrame):
     def __init__(self, master: Any, job: QueueJob, cancel_command: Any) -> None:
-        super().__init__(master, fg_color=SURFACE_ALT, border_width=1, border_color=BORDER)
+        super().__init__(
+            master,
+            fg_color=SURFACE_ELEVATED,
+            border_width=1,
+            border_color=BORDER_STRONG,
+            corner_radius=14,
+        )
         self.job = job
         self.grid_columnconfigure(0, weight=1)
         self.title_label = ctk.CTkLabel(
@@ -191,8 +203,8 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.shutdown_polls = 0
 
         self.title(f"BeeTales Video Downloader v{APP_VERSION}")
-        self.geometry("1180x760")
-        self.minsize(1000, 680)
+        self.geometry("1240x800")
+        self.minsize(1040, 700)
         self.configure(fg_color=APP_BACKGROUND)
         self._set_icon()
         self.grid_columnconfigure(1, weight=1)
@@ -215,14 +227,19 @@ class BeeTalesDownloaderApp(ctk.CTk):
             pass
 
     def _build_sidebar(self) -> None:
-        sidebar = ctk.CTkFrame(self, width=292, corner_radius=0, fg_color=MIDNIGHT)
+        sidebar = ctk.CTkFrame(self, width=268, corner_radius=0, fg_color=MIDNIGHT)
         sidebar.grid(row=0, column=0, sticky="nsew")
         sidebar.grid_propagate(False)
         sidebar.grid_columnconfigure(0, weight=1)
         sidebar.grid_rowconfigure(2, weight=1)
 
         with Image.open(resource_path("assets/thebeetales-logo.png")) as source:
-            self.logo_image = ctk.CTkImage(source.copy(), size=(252, 72))
+            logo = source.copy()
+            self.logo_image = ctk.CTkImage(
+                light_image=logo,
+                dark_image=logo,
+                size=(228, 65),
+            )
         ctk.CTkLabel(sidebar, text="", image=self.logo_image).grid(
             row=0, column=0, padx=18, pady=(20, 4), sticky="ew"
         )
@@ -236,7 +253,12 @@ class BeeTalesDownloaderApp(ctk.CTk):
         info = ctk.CTkFrame(sidebar, fg_color=MIDNIGHT_RAISED, border_width=1, border_color="#274732")
         info.grid(row=2, column=0, padx=20, pady=12, sticky="new")
         with Image.open(resource_path("assets/sora-avatar.png")) as source:
-            self.sora_image = ctk.CTkImage(source.copy(), size=(126, 126))
+            avatar = source.copy()
+            self.sora_image = ctk.CTkImage(
+                light_image=avatar,
+                dark_image=avatar,
+                size=(110, 110),
+            )
         ctk.CTkLabel(info, text="", image=self.sora_image).pack(pady=(14, 6))
         ctk.CTkLabel(
             info,
@@ -300,30 +322,72 @@ class BeeTalesDownloaderApp(ctk.CTk):
         workspace.grid_columnconfigure(0, weight=1)
 
         header = ctk.CTkFrame(workspace, fg_color="transparent")
-        header.grid(row=0, column=0, padx=34, pady=(28, 16), sticky="ew")
+        header.grid(row=0, column=0, padx=30, pady=(24, 14), sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
+        heading = ctk.CTkFrame(header, fg_color="transparent")
+        heading.grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(
-            header,
+            heading,
             text="Descarga contenido autorizado",
             text_color=TEXT,
             anchor="w",
             font=ctk.CTkFont(family=FONT_FAMILY, size=29, weight="bold"),
         ).pack(anchor="w")
         ctk.CTkLabel(
-            header,
+            heading,
             text="YouTube, TikTok, Instagram y X · Video MP4 o Audio MP3",
             text_color=TEXT_MUTED,
             anchor="w",
             font=ctk.CTkFont(family=FONT_FAMILY, size=14),
         ).pack(anchor="w", pady=(3, 0))
 
-        input_card = ctk.CTkFrame(workspace, fg_color=SURFACE, border_width=1, border_color=BORDER)
-        input_card.grid(row=1, column=0, padx=34, pady=(0, 16), sticky="ew")
+        assurance = ctk.CTkFrame(
+            header,
+            fg_color=ACCENT_SOFT,
+            border_width=1,
+            border_color=BORDER_STRONG,
+            corner_radius=14,
+        )
+        assurance.grid(row=0, column=1, padx=(18, 0), sticky="e")
+        with Image.open(resource_path("assets/frog-mascot.png")) as source:
+            mascot = source.copy()
+            self.header_mascot = ctk.CTkImage(
+                light_image=mascot,
+                dark_image=mascot,
+                size=(58, 58),
+            )
+        ctk.CTkLabel(assurance, text="", image=self.header_mascot).grid(
+            row=0, column=0, padx=(10, 4), pady=8
+        )
+        assurance_text = ctk.CTkFrame(assurance, fg_color="transparent")
+        assurance_text.grid(row=0, column=1, padx=(0, 13), pady=8, sticky="w")
+        ctk.CTkLabel(
+            assurance_text,
+            text="100% LOCAL",
+            text_color=ACCENT_TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold"),
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            assurance_text,
+            text="Privado · Sin anuncios",
+            text_color=TEXT_MUTED,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+        ).pack(anchor="w")
+
+        input_card = ctk.CTkFrame(
+            workspace,
+            fg_color=SURFACE,
+            border_width=1,
+            border_color=BORDER,
+            corner_radius=CARD_RADIUS,
+        )
+        input_card.grid(row=1, column=0, padx=30, pady=(0, 14), sticky="ew")
         input_card.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             input_card,
-            text="Enlace público · Ctrl+L",
-            text_color=TEXT,
-            font=ctk.CTkFont(family=FONT_FAMILY, weight="bold"),
+            text="01  PEGA UN ENLACE PÚBLICO  ·  Ctrl+L",
+            text_color=ACCENT_TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold"),
         ).grid(row=0, column=0, columnspan=3, padx=18, pady=(16, 6), sticky="w")
         self.url_entry = ctk.CTkEntry(
             input_card,
@@ -358,26 +422,59 @@ class BeeTalesDownloaderApp(ctk.CTk):
         )
         self.analyze_button.grid(row=1, column=2, padx=(0, 18), pady=(0, 16))
 
-        self.media_card = ctk.CTkFrame(workspace, fg_color=SURFACE, border_width=1, border_color=BORDER)
-        self.media_card.grid_columnconfigure(0, weight=1)
+        self.media_card = ctk.CTkFrame(
+            workspace,
+            fg_color=SURFACE,
+            border_width=1,
+            border_color=BORDER,
+            corner_radius=CARD_RADIUS,
+        )
+        self.media_card.grid_columnconfigure(1, weight=1)
+        with Image.open(resource_path("assets/media-atmosphere.png")) as source:
+            placeholder = ImageOps.fit(source.convert("RGB"), (196, 110))
+        self.thumbnail_placeholder = ctk.CTkImage(
+            light_image=placeholder,
+            dark_image=placeholder,
+            size=(196, 110),
+        )
+        self.thumbnail_image = self.thumbnail_placeholder
+        self.thumbnail_label = ctk.CTkLabel(
+            self.media_card,
+            text="",
+            image=self.thumbnail_placeholder,
+            corner_radius=10,
+        )
+        self.thumbnail_label.grid(row=0, column=0, rowspan=3, padx=16, pady=16)
         self.platform_label = ctk.CTkLabel(
             self.media_card, text="", text_color=ACCENT_TEXT, anchor="w",
             font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold")
         )
-        self.platform_label.grid(row=0, column=0, padx=18, pady=(15, 1), sticky="w")
+        self.platform_label.grid(row=0, column=1, padx=(0, 18), pady=(16, 1), sticky="w")
         self.media_title = ctk.CTkLabel(
             self.media_card, text="", text_color=TEXT, anchor="w", justify="left", wraplength=720,
             font=ctk.CTkFont(family=FONT_FAMILY, size=17, weight="bold")
         )
-        self.media_title.grid(row=1, column=0, columnspan=2, padx=18, sticky="ew")
+        self.media_title.grid(row=1, column=1, padx=(0, 18), sticky="ew")
         self.media_meta = ctk.CTkLabel(self.media_card, text="", text_color=TEXT_MUTED, anchor="w")
-        self.media_meta.grid(row=2, column=0, padx=18, pady=(2, 15), sticky="w")
+        self.media_meta.grid(row=2, column=1, padx=(0, 18), pady=(2, 16), sticky="w")
 
-        options = ctk.CTkFrame(workspace, fg_color=SURFACE, border_width=1, border_color=BORDER)
-        options.grid(row=3, column=0, padx=34, pady=(0, 16), sticky="ew")
+        options = ctk.CTkFrame(
+            workspace,
+            fg_color=SURFACE,
+            border_width=1,
+            border_color=BORDER,
+            corner_radius=CARD_RADIUS,
+        )
+        options.grid(row=3, column=0, padx=30, pady=(0, 14), sticky="ew")
         options.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            options,
+            text="02  CONFIGURA LA SALIDA",
+            text_color=ACCENT_TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold"),
+        ).grid(row=0, column=0, columnspan=2, padx=18, pady=(15, 4), sticky="w")
         ctk.CTkLabel(options, text="Formato", text_color=TEXT).grid(
-            row=0, column=0, padx=(18, 12), pady=(16, 8), sticky="w"
+            row=1, column=0, padx=(18, 12), pady=8, sticky="w"
         )
         self.output_type = ctk.CTkSegmentedButton(
             options,
@@ -390,10 +487,10 @@ class BeeTalesDownloaderApp(ctk.CTk):
             command=lambda _value: self._refresh_format_controls(),
         )
         self.output_type.set("Video MP4")
-        self.output_type.grid(row=0, column=1, padx=(0, 18), pady=(16, 8), sticky="ew")
+        self.output_type.grid(row=1, column=1, padx=(0, 18), pady=8, sticky="ew")
 
         self.quality_label = ctk.CTkLabel(options, text="Calidad", text_color=TEXT)
-        self.quality_label.grid(row=1, column=0, padx=(18, 12), pady=8, sticky="w")
+        self.quality_label.grid(row=2, column=0, padx=(18, 12), pady=8, sticky="w")
         self.quality_menu = ctk.CTkOptionMenu(
             options,
             values=["1080p"],
@@ -402,13 +499,13 @@ class BeeTalesDownloaderApp(ctk.CTk):
             button_hover_color="#365E43",
             text_color=TEXT,
         )
-        self.quality_menu.grid(row=1, column=1, padx=(0, 18), pady=8, sticky="ew")
+        self.quality_menu.grid(row=2, column=1, padx=(0, 18), pady=8, sticky="ew")
 
         ctk.CTkLabel(options, text="Guardar en · Ctrl+O", text_color=TEXT).grid(
-            row=2, column=0, padx=(18, 12), pady=8, sticky="w"
+            row=3, column=0, padx=(18, 12), pady=8, sticky="w"
         )
         destination_row = ctk.CTkFrame(options, fg_color="transparent")
-        destination_row.grid(row=2, column=1, padx=(0, 18), pady=8, sticky="ew")
+        destination_row.grid(row=3, column=1, padx=(0, 18), pady=8, sticky="ew")
         destination_row.grid_columnconfigure(0, weight=1)
         self.destination_entry = ctk.CTkEntry(destination_row, border_color=BORDER, fg_color=SURFACE_ALT)
         self.destination_entry.insert(0, self.preferences.destination)
@@ -434,7 +531,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
             text_color=TEXT_MUTED,
             command=self._refresh_download_state,
         )
-        self.rights_checkbox.grid(row=3, column=0, columnspan=2, padx=18, pady=(10, 8), sticky="w")
+        self.rights_checkbox.grid(row=4, column=0, columnspan=2, padx=18, pady=(10, 8), sticky="w")
         self.download_button = ctk.CTkButton(
             options,
             text="Agregar a la cola · Ctrl+Enter",
@@ -446,16 +543,23 @@ class BeeTalesDownloaderApp(ctk.CTk):
             state="disabled",
             command=self._enqueue_download,
         )
-        self.download_button.grid(row=4, column=0, columnspan=2, padx=18, pady=(4, 18), sticky="ew")
+        self.download_button.grid(row=5, column=0, columnspan=2, padx=18, pady=(4, 18), sticky="ew")
 
         queue_header = ctk.CTkFrame(workspace, fg_color="transparent")
-        queue_header.grid(row=4, column=0, padx=34, pady=(4, 7), sticky="ew")
+        queue_header.grid(row=4, column=0, padx=30, pady=(4, 7), sticky="ew")
         ctk.CTkLabel(
             queue_header,
-            text="Cola de descargas",
+            text="03  Cola de descargas",
             text_color=TEXT,
             font=ctk.CTkFont(family=FONT_FAMILY, size=17, weight="bold"),
         ).pack(side="left")
+        self.queue_summary_label = ctk.CTkLabel(
+            queue_header,
+            text="Sin elementos",
+            text_color=TEXT_MUTED,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+        )
+        self.queue_summary_label.pack(side="left", padx=(12, 0))
         ctk.CTkButton(
             queue_header,
             text="Atajos (F1)",
@@ -468,8 +572,23 @@ class BeeTalesDownloaderApp(ctk.CTk):
             hover_color=BORDER,
             command=self._show_keyboard_help,
         ).pack(side="right")
+        self.clear_queue_button = ctk.CTkButton(
+            queue_header,
+            text="Limpiar finalizadas",
+            width=126,
+            height=28,
+            fg_color="transparent",
+            border_width=1,
+            border_color=BORDER,
+            text_color=TEXT,
+            text_color_disabled=TEXT_MUTED,
+            hover_color=BORDER,
+            state="disabled",
+            command=self._clear_finished_jobs,
+        )
+        self.clear_queue_button.pack(side="right", padx=(0, 8))
         self.queue_frame = ctk.CTkScrollableFrame(workspace, height=180, fg_color="transparent")
-        self.queue_frame.grid(row=5, column=0, padx=34, pady=(0, 14), sticky="ew")
+        self.queue_frame.grid(row=5, column=0, padx=30, pady=(0, 12), sticky="ew")
         self.queue_frame.grid_columnconfigure(0, weight=1)
         self.empty_queue = ctk.CTkLabel(
             self.queue_frame,
@@ -484,7 +603,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
             text_color=TEXT_MUTED,
             anchor="w",
         )
-        self.status_label.grid(row=6, column=0, padx=34, pady=(0, 28), sticky="ew")
+        self.status_label.grid(row=6, column=0, padx=30, pady=(0, 24), sticky="ew")
 
     def _bind_keyboard_shortcuts(self) -> None:
         self.bind_all("<Control-l>", self._focus_url)
@@ -546,24 +665,48 @@ class BeeTalesDownloaderApp(ctk.CTk):
 
     def _analyze_worker(self, url: str) -> None:
         try:
-            self.events.put(("analysis_ok", analyze_media(url, self.tools)))
+            media = analyze_media(url, self.tools)
+            try:
+                thumbnail = fetch_thumbnail(media.thumbnail)
+            except DownloaderError:
+                thumbnail = None
+            self.events.put(("analysis_ok", media, thumbnail))
         except DownloaderError as exc:
             self.events.put(("analysis_error", str(exc)))
         except Exception:
             self.events.put(("analysis_error", "Ocurrió un error inesperado al analizar el enlace."))
 
-    def _show_media(self, media: MediaInfo) -> None:
+    def _show_media(self, media: MediaInfo, thumbnail: bytes | None = None) -> None:
         self.media = media
+        self._show_thumbnail(thumbnail)
         self.platform_label.configure(text=media.platform.label.upper())
         self.media_title.configure(text=media.title)
         meta = " · ".join(item for item in (media.creator, format_duration(media.duration)) if item)
         self.media_meta.configure(text=meta)
-        self.media_card.grid(row=2, column=0, padx=34, pady=(0, 16), sticky="ew")
+        self.media_card.grid(row=2, column=0, padx=30, pady=(0, 14), sticky="ew")
         values = [f"{height}p" for height in reversed(media.qualities)]
         self.quality_menu.configure(values=values)
         self.quality_menu.set(f"{media.default_quality}p")
         self._refresh_download_state()
         self._set_status("Enlace listo para agregar a la cola.", success=True)
+
+    def _show_thumbnail(self, payload: bytes | None) -> None:
+        if payload:
+            try:
+                with Image.open(BytesIO(payload)) as source:
+                    if source.width * source.height > 20_000_000:
+                        raise ValueError("Thumbnail dimensions are too large")
+                    prepared = ImageOps.fit(source.convert("RGB"), (196, 110))
+                self.thumbnail_image = ctk.CTkImage(
+                    light_image=prepared,
+                    dark_image=prepared,
+                    size=(196, 110),
+                )
+            except (OSError, ValueError, Image.DecompressionBombError):
+                self.thumbnail_image = self.thumbnail_placeholder
+        else:
+            self.thumbnail_image = self.thumbnail_placeholder
+        self.thumbnail_label.configure(image=self.thumbnail_image)
 
     def _refresh_download_state(self) -> None:
         ready = self.media is not None and bool(self.rights_checkbox.get())
@@ -643,6 +786,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         card.grid(row=job.job_id, column=0, pady=(0, 8), sticky="ew")
         self.queue_cards[job.job_id] = card
         self.download_queue.put(job)
+        self._refresh_queue_header()
         self.rights_checkbox.deselect()
         self._refresh_download_state()
         self._set_status("Descarga agregada a la cola.", success=True)
@@ -684,6 +828,35 @@ class BeeTalesDownloaderApp(ctk.CTk):
             card.status_label.configure(text="Cancelando…")
             card.action.configure(state="disabled")
 
+    def _clear_finished_jobs(self) -> None:
+        identifiers = self.queue_manager.remove_finished()
+        for job_id in identifiers:
+            card = self.queue_cards.pop(job_id, None)
+            if card:
+                card.destroy()
+        if not self.queue_cards:
+            self.empty_queue.grid(row=0, column=0, pady=22)
+        self._refresh_queue_header()
+        if identifiers:
+            count = len(identifiers)
+            self._set_status(
+                f"Se retiraron {count} elemento{'s' if count != 1 else ''} finalizado{'s' if count != 1 else ''}.",
+                success=True,
+            )
+
+    def _refresh_queue_header(self) -> None:
+        total = self.queue_manager.total_count
+        active = self.queue_manager.active_count
+        finished = self.queue_manager.finished_count
+        if not total:
+            summary = "Sin elementos"
+        elif active:
+            summary = f"{active} activa{'s' if active != 1 else ''} · {finished} finalizada{'s' if finished != 1 else ''}"
+        else:
+            summary = f"{finished} finalizada{'s' if finished != 1 else ''}"
+        self.queue_summary_label.configure(text=summary)
+        self.clear_queue_button.configure(state="normal" if finished else "disabled")
+
     def _process_events(self) -> None:
         try:
             while True:
@@ -692,7 +865,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
                 if kind == "analysis_ok":
                     self.analyzing = False
                     self.analyze_button.configure(state="normal", text="Analizar")
-                    self._show_media(event[1])
+                    self._show_media(event[1], event[2])
                 elif kind == "analysis_error":
                     self.analyzing = False
                     self.analyze_button.configure(state="normal", text="Analizar")
@@ -706,15 +879,18 @@ class BeeTalesDownloaderApp(ctk.CTk):
                     if card:
                         card.finish(event[2])
                     self._set_status("Descarga completada.", success=True)
+                    self._refresh_queue_header()
                 elif kind == "cancelled":
                     card = self.queue_cards.get(event[1])
                     if card:
                         card.fail("", cancelled=True)
+                    self._refresh_queue_header()
                 elif kind == "failed":
                     card = self.queue_cards.get(event[1])
                     if card:
                         card.fail(event[2])
                     self._set_status(event[2], error=True)
+                    self._refresh_queue_header()
         except queue.Empty:
             pass
         if not self.closing:
