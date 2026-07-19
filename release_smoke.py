@@ -22,6 +22,7 @@ from downloader import (
     validate_url,
 )
 from settings import Settings, load_settings, save_settings
+from release_metadata import APP_VERSION, archive_name, render_windows_version_info
 
 
 REQUIRED_ASSETS = (
@@ -183,6 +184,8 @@ def run_release_smoke_test(root: str | Path | None = None) -> dict[str, Any]:
     _validate_executable(tools.ffprobe, "-version", "ffprobe")
     _validate_executable(tools.deno, "--version", "deno")
     _validate_media_pipeline(tools)
+    _require(APP_VERSION in render_windows_version_info(), "Los metadatos de versión no coinciden")
+    _require(archive_name().startswith("BeeTales-Video-Downloader-v"), "Nombre de entrega inválido")
 
     validated = validate_url("https://www.youtube.com/watch?v=beetales-test")
     _require(validated.platform.id == "youtube", "La validación de plataforma falló")
@@ -211,4 +214,5 @@ def run_release_smoke_test(root: str | Path | None = None) -> dict[str, Any]:
         "platform": validated.platform.id,
         "ffmpeg": tools.ffmpeg.name if tools.ffmpeg else "",
         "deno": tools.deno.name if tools.deno else "",
+        "version": APP_VERSION,
     }

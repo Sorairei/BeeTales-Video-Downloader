@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from downloader import (
@@ -17,6 +18,15 @@ from downloader import (
 )
 from settings import Settings, load_settings, save_settings
 from queue_manager import DuplicateJobError, QueueManager, request_identity
+from release_metadata import (
+    APP_VERSION,
+    archive_name,
+    create_reproducible_archive,
+    render_windows_version_info,
+    sha256_file,
+    version_tuple,
+    write_release_metadata,
+)
 
 
 class UrlValidationTests(unittest.TestCase):
@@ -206,6 +216,44 @@ class QueueManagerTests(unittest.TestCase):
         first = self._request(Path("C:/Media/../Media"))
         second = self._request(Path("C:/Media"))
         self.assertEqual(request_identity(first), request_identity(second))
+
+
+class ReleaseMetadataTests(unittest.TestCase):
+    def test_version_is_consistent_across_release_metadata(self) -> None:
+        self.assertEqual(version_tuple(), (0, 3, 0, 0))
+        self.assertIn(f'ProductVersion", "{APP_VERSION}"', render_windows_version_info())
+        self.assertEqual(
+            archive_name(), f"BeeTales-Video-Downloader-v{APP_VERSION}-Windows-x64.zip"
+        )
+
+    def test_release_archive_is_reproducible(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            source = root / "package"
+            source.mkdir()
+            (source / "b.txt").write_text("second\n", encoding="utf-8")
+            (source / "a.txt").write_text("first\n", encoding="utf-8")
+            first = root / "first.zip"
+            second = root / "second.zip"
+            create_reproducible_archive(source, first)
+            create_reproducible_archive(source, second)
+            self.assertEqual(sha256_file(first), sha256_file(second))
+
+    def test_manifest_and_checksum_describe_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            source = root / "package"
+            source.mkdir()
+            (source / "LICENSE").write_text("MIT\n", encoding="utf-8")
+            archive = root / archive_name()
+            manifest_path = root / "release-manifest.json"
+            checksums_path = root / "SHA256SUMS.txt"
+            create_reproducible_archive(source, archive)
+            expected = write_release_metadata(archive, manifest_path, checksums_path)
+            actual = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(actual, expected)
+            self.assertEqual(actual["sha256"], sha256_file(archive))
+            self.assertIn(archive.name, checksums_path.read_text(encoding="ascii"))
 
 
 if __name__ == "__main__":

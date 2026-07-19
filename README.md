@@ -43,6 +43,7 @@ Processing runs on the user's computer through yt-dlp, FFmpeg, FFprobe, and Deno
 - [Architecture](#architecture)
 - [Download behavior](#download-behavior)
 - [Repository structure](#repository-structure)
+- [Versioning and release artifacts](#versioning-and-release-artifacts)
 - [Windows application](#windows-application)
 - [Local development](#local-development)
 - [Local runtime setup](#local-runtime-setup)
@@ -159,6 +160,7 @@ flowchart LR
 | `app.py` | CustomTkinter window, interaction, background workers, and controlled shutdown |
 | `downloader.py` | URL validation, tool detection, yt-dlp integration, formats, progress, and safe errors |
 | `queue_manager.py` | Queue states, duplicate detection, cancellation, and active job identities |
+| `release_metadata.py` | Application version, Windows metadata, deterministic ZIP creation, manifest, and checksums |
 | `settings.py` | Atomic local preferences without URL or download history |
 | `theme.py` | BeeTales desktop colors and typography |
 | `assets/` | Logo, mascot, application icons, avatar, and social-video artwork |
@@ -173,10 +175,24 @@ flowchart LR
 | `SECURITY.md` | Security boundaries and vulnerability reporting |
 | `USAGE_POLICY.md` | Authorized-use requirements and prohibited use cases |
 | `THIRD_PARTY_NOTICES.md` | Third-party licenses and runtime notices |
+| `CHANGELOG.md` | Versioned project history following Keep a Changelog |
+
+## Versioning and release artifacts
+
+`release_metadata.py` is the single source of the application version. Local builds use it to generate the Windows executable metadata, visible application version, versioned archive name, release manifest, and checksum file.
+
+| Artifact | Purpose |
+| --- | --- |
+| `BeeTales Video Downloader.exe` | Windows application binary with embedded version resources |
+| `BeeTales-Video-Downloader-vX.Y.Z-Windows-x64.zip` | Deterministically ordered distributable package |
+| `release-manifest-vX.Y.Z.json` | Machine-readable product, version, platform, filename, size, and SHA-256 metadata |
+| `SHA256SUMS-vX.Y.Z.txt` | Standard checksum entry for local or release verification |
+
+The package includes `VERSION.txt`, the README, changelog, project license, privacy and usage policies, and third-party notices. Version history is maintained in [CHANGELOG.md](CHANGELOG.md).
 
 ## Windows application
 
-1. Download `BeeTales-Video-Downloader-Windows-x64.zip` from [GitHub Releases](https://github.com/Sorairei/BeeTales-Video-Downloader/releases).
+1. Download `BeeTales-Video-Downloader-vX.Y.Z-Windows-x64.zip` from [GitHub Releases](https://github.com/Sorairei/BeeTales-Video-Downloader/releases).
 2. Extract the complete ZIP to a local folder.
 3. Run `BeeTales Video Downloader.exe`.
 4. Paste an authorized public URL, select MP4 or MP3, and choose the destination.
@@ -219,7 +235,7 @@ All project tests and release checks can be executed locally:
 
 ```powershell
 .\.venv-build\Scripts\python.exe -m unittest -v test_downloader.py
-.\.venv-build\Scripts\python.exe -m py_compile app.py downloader.py queue_manager.py settings.py release_smoke.py theme.py
+.\.venv-build\Scripts\python.exe -m py_compile app.py downloader.py queue_manager.py release_metadata.py settings.py release_smoke.py theme.py
 .\.venv-build\Scripts\python.exe qa_visual.py
 .\build_release.ps1
 ```
@@ -232,7 +248,7 @@ All project tests and release checks can be executed locally:
 | Synthetic MP4 and MP3 test | Use bundled FFmpeg and FFprobe without downloading third-party content |
 | Compiled smoke test | Run the packaged executable in hidden validation mode |
 | Visual QA | Launch the local executable, capture the window, and confirm child processes are cleaned up |
-| Release package | Produce the Windows executable and ZIP together with the archive SHA-256 |
+| Release package | Produce the Windows executable, versioned ZIP, manifest, and checksum file |
 
 Unit tests do not contact supported platforms or perform real downloads. Public-platform metadata checks, when intentionally performed, analyze individual test links without saving their media.
 

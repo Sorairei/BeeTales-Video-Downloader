@@ -37,6 +37,7 @@ from downloader import (
 )
 from settings import Settings, load_settings, save_settings
 from queue_manager import DuplicateJobError, QueueJob, QueueManager
+from release_metadata import APP_VERSION
 from theme import (
     APP_BACKGROUND,
     BORDER,
@@ -185,7 +186,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.closing = False
         self.shutdown_polls = 0
 
-        self.title("BeeTales Video Downloader")
+        self.title(f"BeeTales Video Downloader v{APP_VERSION}")
         self.geometry("1180x760")
         self.minsize(1000, 680)
         self.configure(fg_color=APP_BACKGROUND)
@@ -280,6 +281,12 @@ class BeeTalesDownloaderApp(ctk.CTk):
         )
         self.appearance_menu.set(self.preferences.appearance)
         self.appearance_menu.grid(row=0, column=1, sticky="e")
+        ctk.CTkLabel(
+            sidebar,
+            text=f"Version {APP_VERSION}",
+            text_color=SIDEBAR_MUTED,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=10),
+        ).grid(row=6, column=0, padx=20, pady=(0, 12))
 
     def _build_workspace(self) -> None:
         workspace = ctk.CTkScrollableFrame(self, fg_color=APP_BACKGROUND, corner_radius=0)
