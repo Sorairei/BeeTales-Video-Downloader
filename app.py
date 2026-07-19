@@ -7,7 +7,6 @@ import subprocess
 import sys
 import threading
 import webbrowser
-from dataclasses import dataclass
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Any
@@ -37,6 +36,7 @@ from downloader import (
     download_media,
 )
 from settings import Settings, load_settings, save_settings
+from queue_manager import DuplicateJobError, QueueJob, QueueManager
 from theme import (
     APP_BACKGROUND,
     BORDER,
@@ -87,14 +87,6 @@ def format_speed(value: float | None) -> str:
             break
         amount /= 1024
     return f"{amount:.1f} {unit}"
-
-
-@dataclass
-class QueueJob:
-    job_id: int
-    title: str
-    request: DownloadRequest
-    cancel_event: threading.Event
 
 
 class QueueCard(ctk.CTkFrame):
@@ -185,10 +177,13 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.preferences = load_settings()
         self.media: MediaInfo | None = None
         self.events: queue.Queue[tuple] = queue.Queue()
-        self.download_queue: queue.Queue[QueueJob] = queue.Queue()
+        self.download_queue: queue.Queue[QueueJob | None] = queue.Queue()
+        self.queue_manager = QueueManager()
         self.queue_cards: dict[int, QueueCard] = {}
-        self.next_job_id = 1
         self.analyzing = False
+        self.analysis_thread: threading.Thread | None = None
+        self.closing = False
+        self.shutdown_polls = 0
 
         self.title("BeeTales Video Downloader")
         self.geometry("1180x760")
@@ -201,8 +196,10 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self._apply_appearance(self.preferences.appearance)
         self._build_sidebar()
         self._build_workspace()
+        self.protocol("WM_DELETE_WINDOW", self._request_close)
         self.after(100, self._process_events)
-        threading.Thread(target=self._download_worker, daemon=True).start()
+        self.download_worker = threading.Thread(target=self._download_worker, daemon=True)
+        self.download_worker.start()
 
     def _set_icon(self) -> None:
         try:
@@ -484,7 +481,10 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.media = None
         self.media_card.grid_forget()
         self._set_status("Consultando información pública…")
-        threading.Thread(target=self._analyze_worker, args=(url,), daemon=True).start()
+        self.analysis_thread = threading.Thread(
+            target=self._analyze_worker, args=(url,), daemon=True
+        )
+        self.analysis_thread.start()
 
     def _analyze_worker(self, url: str) -> None:
         try:
@@ -574,8 +574,11 @@ class BeeTalesDownloaderApp(ctk.CTk):
             quality=numeric if output_type == "video" else 1080,
             audio_bitrate=numeric if output_type == "audio" else 192,
         )
-        job = QueueJob(self.next_job_id, self.media.title, request, threading.Event())
-        self.next_job_id += 1
+        try:
+            job = self.queue_manager.create(self.media.title, request)
+        except DuplicateJobError as exc:
+            self._set_status(str(exc), error=True)
+            return
         if self.empty_queue.winfo_exists():
             self.empty_queue.grid_remove()
         card = QueueCard(self.queue_frame, job, lambda job_id=job.job_id: self._cancel_job(job_id))
@@ -589,7 +592,10 @@ class BeeTalesDownloaderApp(ctk.CTk):
     def _download_worker(self) -> None:
         while True:
             job = self.download_queue.get()
-            if job.cancel_event.is_set():
+            if job is None:
+                self.download_queue.task_done()
+                return
+            if not self.queue_manager.start(job.job_id):
                 self.events.put(("cancelled", job.job_id))
                 self.download_queue.task_done()
                 continue
@@ -600,20 +606,23 @@ class BeeTalesDownloaderApp(ctk.CTk):
                     job.cancel_event,
                     lambda event, job_id=job.job_id: self.events.put(("progress", job_id, event)),
                 )
+                self.queue_manager.finish(job.job_id, "completed")
                 self.events.put(("finished", job.job_id, job.request.destination))
             except DownloadCancelled:
+                self.queue_manager.finish(job.job_id, "cancelled")
                 self.events.put(("cancelled", job.job_id))
             except DownloaderError as exc:
+                self.queue_manager.finish(job.job_id, "failed")
                 self.events.put(("failed", job.job_id, str(exc)))
             except Exception:
+                self.queue_manager.finish(job.job_id, "failed")
                 self.events.put(("failed", job.job_id, "Ocurrió un error inesperado."))
             finally:
                 self.download_queue.task_done()
 
     def _cancel_job(self, job_id: int) -> None:
         card = self.queue_cards.get(job_id)
-        if card:
-            card.job.cancel_event.set()
+        if card and self.queue_manager.cancel(job_id):
             card.status_label.configure(text="Cancelando…")
             card.action.configure(state="disabled")
 
@@ -650,7 +659,35 @@ class BeeTalesDownloaderApp(ctk.CTk):
                     self._set_status(event[2], error=True)
         except queue.Empty:
             pass
-        self.after(100, self._process_events)
+        if not self.closing:
+            self.after(100, self._process_events)
+
+    def _request_close(self) -> None:
+        if self.closing:
+            return
+        operations = self.queue_manager.active_count + int(
+            bool(self.analysis_thread and self.analysis_thread.is_alive())
+        )
+        if operations and not messagebox.askyesno(
+            "Salir de BeeTales",
+            "Hay operaciones activas. ¿Quieres cancelarlas y cerrar la aplicación?",
+        ):
+            return
+        self.closing = True
+        self.queue_manager.cancel_all()
+        self.download_queue.put(None)
+        self.analyze_button.configure(state="disabled")
+        self.download_button.configure(state="disabled")
+        self._set_status("Cerrando operaciones locales de forma segura…")
+        self._wait_for_shutdown()
+
+    def _wait_for_shutdown(self) -> None:
+        analysis_running = bool(self.analysis_thread and self.analysis_thread.is_alive())
+        if (not self.download_worker.is_alive() and not analysis_running) or self.shutdown_polls >= 250:
+            self.destroy()
+            return
+        self.shutdown_polls += 1
+        self.after(100, self._wait_for_shutdown)
 
     def _set_status(self, message: str, error: bool = False, success: bool = False) -> None:
         color = DANGER if error else SUCCESS if success else TEXT_MUTED

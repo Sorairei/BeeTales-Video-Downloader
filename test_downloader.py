@@ -16,6 +16,7 @@ from downloader import (
     validate_url,
 )
 from settings import Settings, load_settings, save_settings
+from queue_manager import DuplicateJobError, QueueManager, request_identity
 
 
 class UrlValidationTests(unittest.TestCase):
@@ -160,6 +161,51 @@ class SettingsTests(unittest.TestCase):
             contents = path.read_text(encoding="utf-8")
             self.assertNotIn("url", contents.lower())
             self.assertNotIn("history", contents.lower())
+
+
+class QueueManagerTests(unittest.TestCase):
+    def _request(self, destination: Path, quality: int = 720) -> DownloadRequest:
+        return DownloadRequest("https://youtu.be/example", "video", destination, quality=quality)
+
+    def test_duplicate_active_request_is_rejected(self) -> None:
+        manager = QueueManager()
+        request = self._request(Path("C:/Media"))
+        manager.create("Example", request)
+        with self.assertRaises(DuplicateJobError):
+            manager.create("Example", request)
+        self.assertEqual(manager.active_count, 1)
+
+    def test_completed_request_can_be_added_again(self) -> None:
+        manager = QueueManager()
+        request = self._request(Path("C:/Media"))
+        first = manager.create("Example", request)
+        self.assertTrue(manager.start(first.job_id))
+        manager.finish(first.job_id, "completed")
+        second = manager.create("Example", request)
+        self.assertNotEqual(first.job_id, second.job_id)
+
+    def test_cancelled_queued_job_never_starts(self) -> None:
+        manager = QueueManager()
+        job = manager.create("Example", self._request(Path("C:/Media")))
+        self.assertTrue(manager.cancel(job.job_id))
+        self.assertFalse(manager.start(job.job_id))
+        self.assertEqual(job.state, "cancelled")
+        self.assertEqual(manager.active_count, 0)
+
+    def test_cancel_all_signals_every_active_job(self) -> None:
+        manager = QueueManager()
+        first = manager.create("First", self._request(Path("C:/Media"), 720))
+        second = manager.create("Second", self._request(Path("C:/Media"), 1080))
+        self.assertTrue(manager.start(first.job_id))
+        self.assertEqual(manager.cancel_all(), 2)
+        self.assertTrue(first.cancel_event.is_set())
+        self.assertTrue(second.cancel_event.is_set())
+        self.assertEqual(manager.active_count, 2)
+
+    def test_identity_normalizes_equivalent_destinations(self) -> None:
+        first = self._request(Path("C:/Media/../Media"))
+        second = self._request(Path("C:/Media"))
+        self.assertEqual(request_identity(first), request_identity(second))
 
 
 if __name__ == "__main__":
