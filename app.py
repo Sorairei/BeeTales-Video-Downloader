@@ -1,0 +1,662 @@
+"""Aplicación de escritorio local BeeTales Video Downloader."""
+
+from __future__ import annotations
+
+import queue
+import subprocess
+import sys
+import threading
+import webbrowser
+from dataclasses import dataclass
+from pathlib import Path
+from tkinter import filedialog, messagebox
+from typing import Any
+
+if "--smoke-test" in sys.argv:
+    try:
+        from release_smoke import run_release_smoke_test
+
+        result = run_release_smoke_test()
+        print(f"Validación correcta: {result}")
+    except Exception as exc:
+        print(f"Validación de entrega fallida: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+    raise SystemExit(0)
+
+import customtkinter as ctk
+from PIL import Image
+
+from downloader import (
+    DownloadCancelled,
+    DownloadRequest,
+    DownloaderError,
+    MediaInfo,
+    ProgressEvent,
+    analyze_media,
+    detect_tools,
+    download_media,
+)
+from settings import Settings, load_settings, save_settings
+from theme import (
+    APP_BACKGROUND,
+    BORDER,
+    DANGER,
+    DANGER_HOVER,
+    FONT_FAMILY,
+    LIME,
+    MIDNIGHT,
+    MIDNIGHT_RAISED,
+    ORANGE,
+    PRIMARY,
+    PRIMARY_HOVER,
+    SIDEBAR_MUTED,
+    SIDEBAR_TEXT,
+    SPONSOR,
+    SPONSOR_HOVER,
+    SUCCESS,
+    SURFACE,
+    SURFACE_ALT,
+    TEXT,
+    TEXT_MUTED,
+)
+
+
+SPONSOR_URL = "https://github.com/sponsors/Sorairei"
+
+
+def resource_path(relative: str) -> Path:
+    return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / relative
+
+
+def format_duration(seconds: int | None) -> str:
+    if seconds is None:
+        return "Duración desconocida"
+    hours, remainder = divmod(seconds, 3600)
+    minutes, remaining_seconds = divmod(remainder, 60)
+    return f"{hours}:{minutes:02d}:{remaining_seconds:02d}" if hours else f"{minutes}:{remaining_seconds:02d}"
+
+
+def format_speed(value: float | None) -> str:
+    if not value:
+        return ""
+    units = ("B/s", "KB/s", "MB/s", "GB/s")
+    amount = float(value)
+    unit = units[0]
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            break
+        amount /= 1024
+    return f"{amount:.1f} {unit}"
+
+
+@dataclass
+class QueueJob:
+    job_id: int
+    title: str
+    request: DownloadRequest
+    cancel_event: threading.Event
+
+
+class QueueCard(ctk.CTkFrame):
+    def __init__(self, master: Any, job: QueueJob, cancel_command: Any) -> None:
+        super().__init__(master, fg_color=SURFACE_ALT, border_width=1, border_color=BORDER)
+        self.job = job
+        self.grid_columnconfigure(0, weight=1)
+        self.title_label = ctk.CTkLabel(
+            self,
+            text=job.title,
+            anchor="w",
+            text_color=TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold"),
+        )
+        self.title_label.grid(row=0, column=0, padx=(14, 8), pady=(11, 0), sticky="ew")
+        output = "Video MP4" if job.request.output_type == "video" else "Audio MP3"
+        self.status_label = ctk.CTkLabel(
+            self, text=f"{output} · En cola", anchor="w", text_color=TEXT_MUTED
+        )
+        self.status_label.grid(row=1, column=0, padx=(14, 8), pady=(1, 7), sticky="ew")
+        self.progress = ctk.CTkProgressBar(
+            self, height=8, progress_color=PRIMARY, fg_color=BORDER
+        )
+        self.progress.set(0)
+        self.progress.grid(row=2, column=0, padx=(14, 8), pady=(0, 12), sticky="ew")
+        self.action = ctk.CTkButton(
+            self,
+            text="Cancelar",
+            width=90,
+            height=32,
+            fg_color="transparent",
+            border_width=1,
+            border_color=BORDER,
+            text_color=TEXT,
+            hover_color=BORDER,
+            command=cancel_command,
+        )
+        self.action.grid(row=0, column=1, rowspan=3, padx=(0, 12), pady=12)
+
+    def update_progress(self, event: ProgressEvent) -> None:
+        self.progress.set(event.percent / 100)
+        details = event.message
+        if not details:
+            parts = [f"{event.percent:.0f}%"]
+            speed = format_speed(event.speed)
+            if speed:
+                parts.append(speed)
+            if event.eta is not None:
+                parts.append(f"{event.eta}s restantes")
+            details = " · ".join(parts)
+        self.status_label.configure(text=details)
+
+    def finish(self, destination: Path) -> None:
+        self.progress.set(1)
+        self.status_label.configure(text="Completado", text_color=SUCCESS)
+        self.action.configure(
+            text="Abrir carpeta",
+            fg_color=PRIMARY,
+            hover_color=PRIMARY_HOVER,
+            text_color="#071008",
+            border_width=0,
+            command=lambda: open_directory(destination),
+        )
+
+    def fail(self, message: str, cancelled: bool = False) -> None:
+        self.status_label.configure(
+            text="Cancelado" if cancelled else message,
+            text_color=TEXT_MUTED if cancelled else DANGER,
+        )
+        self.action.configure(state="disabled", text="Cancelado" if cancelled else "Error")
+
+
+def open_directory(directory: Path) -> None:
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", str(directory)], shell=False)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(directory)], shell=False)
+        else:
+            subprocess.Popen(["xdg-open", str(directory)], shell=False)
+    except OSError:
+        messagebox.showerror("No se pudo abrir", f"Abre manualmente esta carpeta:\n{directory}")
+
+
+class BeeTalesDownloaderApp(ctk.CTk):
+    def __init__(self) -> None:
+        super().__init__()
+        self.preferences = load_settings()
+        self.media: MediaInfo | None = None
+        self.events: queue.Queue[tuple] = queue.Queue()
+        self.download_queue: queue.Queue[QueueJob] = queue.Queue()
+        self.queue_cards: dict[int, QueueCard] = {}
+        self.next_job_id = 1
+        self.analyzing = False
+
+        self.title("BeeTales Video Downloader")
+        self.geometry("1180x760")
+        self.minsize(1000, 680)
+        self.configure(fg_color=APP_BACKGROUND)
+        self._set_icon()
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        self._apply_appearance(self.preferences.appearance)
+        self._build_sidebar()
+        self._build_workspace()
+        self.after(100, self._process_events)
+        threading.Thread(target=self._download_worker, daemon=True).start()
+
+    def _set_icon(self) -> None:
+        try:
+            self.iconbitmap(str(resource_path("assets/beetales-app-icon.ico")))
+        except Exception:
+            pass
+
+    def _build_sidebar(self) -> None:
+        sidebar = ctk.CTkFrame(self, width=292, corner_radius=0, fg_color=MIDNIGHT)
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_propagate(False)
+        sidebar.grid_columnconfigure(0, weight=1)
+        sidebar.grid_rowconfigure(2, weight=1)
+
+        with Image.open(resource_path("assets/thebeetales-logo.png")) as source:
+            self.logo_image = ctk.CTkImage(source.copy(), size=(252, 72))
+        ctk.CTkLabel(sidebar, text="", image=self.logo_image).grid(
+            row=0, column=0, padx=18, pady=(20, 4), sticky="ew"
+        )
+        ctk.CTkLabel(
+            sidebar,
+            text="VIDEO DOWNLOADER",
+            text_color=LIME,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+        ).grid(row=1, column=0, padx=24, pady=(0, 12))
+
+        info = ctk.CTkFrame(sidebar, fg_color=MIDNIGHT_RAISED, border_width=1, border_color="#274732")
+        info.grid(row=2, column=0, padx=20, pady=12, sticky="new")
+        with Image.open(resource_path("assets/sora-avatar.png")) as source:
+            self.sora_image = ctk.CTkImage(source.copy(), size=(126, 126))
+        ctk.CTkLabel(info, text="", image=self.sora_image).pack(pady=(14, 6))
+        ctk.CTkLabel(
+            info,
+            text="Sora procesa todo localmente",
+            text_color=SIDEBAR_TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=13, weight="bold"),
+        ).pack(padx=16)
+        ctk.CTkLabel(
+            info,
+            text="Sin cuentas, publicidad, telemetría\nni servidores de BeeTales.",
+            text_color=SIDEBAR_MUTED,
+            justify="center",
+        ).pack(padx=16, pady=(3, 15))
+
+        self.tools = detect_tools()
+        ready = bool(self.tools.ffmpeg and self.tools.ffprobe)
+        self.tools_label = ctk.CTkLabel(
+            sidebar,
+            text="● Herramientas listas" if ready else "● FFmpeg no encontrado",
+            text_color=SUCCESS if ready else ORANGE,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11),
+        )
+        self.tools_label.grid(row=3, column=0, padx=24, pady=(4, 12))
+
+        ctk.CTkButton(
+            sidebar,
+            text="♥  Patrocinar en GitHub",
+            height=40,
+            fg_color=SPONSOR,
+            hover_color=SPONSOR_HOVER,
+            command=lambda: webbrowser.open(SPONSOR_URL),
+        ).grid(row=4, column=0, padx=20, pady=(0, 14), sticky="ew")
+
+        appearance = ctk.CTkFrame(sidebar, fg_color="transparent")
+        appearance.grid(row=5, column=0, padx=20, pady=(0, 20), sticky="ew")
+        appearance.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(appearance, text="Apariencia", text_color=SIDEBAR_MUTED).grid(
+            row=0, column=0, sticky="w"
+        )
+        self.appearance_menu = ctk.CTkOptionMenu(
+            appearance,
+            values=["Sistema", "Claro", "Oscuro"],
+            width=105,
+            fg_color=MIDNIGHT_RAISED,
+            button_color="#294934",
+            button_hover_color="#365E43",
+            command=self._change_appearance,
+        )
+        self.appearance_menu.set(self.preferences.appearance)
+        self.appearance_menu.grid(row=0, column=1, sticky="e")
+
+    def _build_workspace(self) -> None:
+        workspace = ctk.CTkScrollableFrame(self, fg_color=APP_BACKGROUND, corner_radius=0)
+        workspace.grid(row=0, column=1, sticky="nsew")
+        workspace.grid_columnconfigure(0, weight=1)
+
+        header = ctk.CTkFrame(workspace, fg_color="transparent")
+        header.grid(row=0, column=0, padx=34, pady=(28, 16), sticky="ew")
+        ctk.CTkLabel(
+            header,
+            text="Descarga contenido autorizado",
+            text_color=TEXT,
+            anchor="w",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=29, weight="bold"),
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            header,
+            text="YouTube, TikTok, Instagram y X · Video MP4 o Audio MP3",
+            text_color=TEXT_MUTED,
+            anchor="w",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=14),
+        ).pack(anchor="w", pady=(3, 0))
+
+        input_card = ctk.CTkFrame(workspace, fg_color=SURFACE, border_width=1, border_color=BORDER)
+        input_card.grid(row=1, column=0, padx=34, pady=(0, 16), sticky="ew")
+        input_card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            input_card,
+            text="Enlace público",
+            text_color=TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, weight="bold"),
+        ).grid(row=0, column=0, columnspan=3, padx=18, pady=(16, 6), sticky="w")
+        self.url_entry = ctk.CTkEntry(
+            input_card,
+            height=44,
+            placeholder_text="https://www.youtube.com/watch?v=...",
+            border_color=BORDER,
+            fg_color=SURFACE_ALT,
+        )
+        self.url_entry.grid(row=1, column=0, padx=(18, 8), pady=(0, 16), sticky="ew")
+        ctk.CTkButton(
+            input_card,
+            text="Pegar",
+            width=74,
+            height=44,
+            fg_color="transparent",
+            border_width=1,
+            border_color=BORDER,
+            text_color=TEXT,
+            hover_color=BORDER,
+            command=self._paste_url,
+        ).grid(row=1, column=1, padx=(0, 8), pady=(0, 16))
+        self.analyze_button = ctk.CTkButton(
+            input_card,
+            text="Analizar",
+            width=100,
+            height=44,
+            fg_color=PRIMARY,
+            hover_color=PRIMARY_HOVER,
+            text_color="#071008",
+            command=self._start_analysis,
+        )
+        self.analyze_button.grid(row=1, column=2, padx=(0, 18), pady=(0, 16))
+
+        self.media_card = ctk.CTkFrame(workspace, fg_color=SURFACE, border_width=1, border_color=BORDER)
+        self.media_card.grid_columnconfigure(0, weight=1)
+        self.platform_label = ctk.CTkLabel(
+            self.media_card, text="", text_color=PRIMARY, anchor="w",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold")
+        )
+        self.platform_label.grid(row=0, column=0, padx=18, pady=(15, 1), sticky="w")
+        self.media_title = ctk.CTkLabel(
+            self.media_card, text="", text_color=TEXT, anchor="w", justify="left", wraplength=720,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=17, weight="bold")
+        )
+        self.media_title.grid(row=1, column=0, columnspan=2, padx=18, sticky="ew")
+        self.media_meta = ctk.CTkLabel(self.media_card, text="", text_color=TEXT_MUTED, anchor="w")
+        self.media_meta.grid(row=2, column=0, padx=18, pady=(2, 15), sticky="w")
+
+        options = ctk.CTkFrame(workspace, fg_color=SURFACE, border_width=1, border_color=BORDER)
+        options.grid(row=3, column=0, padx=34, pady=(0, 16), sticky="ew")
+        options.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(options, text="Formato", text_color=TEXT).grid(
+            row=0, column=0, padx=(18, 12), pady=(16, 8), sticky="w"
+        )
+        self.output_type = ctk.CTkSegmentedButton(
+            options,
+            values=["Video MP4", "Audio MP3"],
+            selected_color=PRIMARY,
+            selected_hover_color=PRIMARY_HOVER,
+            unselected_color=SURFACE_ALT,
+            unselected_hover_color=BORDER,
+            text_color=TEXT,
+            command=lambda _value: self._refresh_format_controls(),
+        )
+        self.output_type.set("Video MP4")
+        self.output_type.grid(row=0, column=1, padx=(0, 18), pady=(16, 8), sticky="ew")
+
+        self.quality_label = ctk.CTkLabel(options, text="Calidad", text_color=TEXT)
+        self.quality_label.grid(row=1, column=0, padx=(18, 12), pady=8, sticky="w")
+        self.quality_menu = ctk.CTkOptionMenu(
+            options,
+            values=["1080p"],
+            fg_color=SURFACE_ALT,
+            button_color="#294934",
+            button_hover_color="#365E43",
+            text_color=TEXT,
+        )
+        self.quality_menu.grid(row=1, column=1, padx=(0, 18), pady=8, sticky="ew")
+
+        ctk.CTkLabel(options, text="Guardar en", text_color=TEXT).grid(
+            row=2, column=0, padx=(18, 12), pady=8, sticky="w"
+        )
+        destination_row = ctk.CTkFrame(options, fg_color="transparent")
+        destination_row.grid(row=2, column=1, padx=(0, 18), pady=8, sticky="ew")
+        destination_row.grid_columnconfigure(0, weight=1)
+        self.destination_entry = ctk.CTkEntry(destination_row, border_color=BORDER, fg_color=SURFACE_ALT)
+        self.destination_entry.insert(0, self.preferences.destination)
+        self.destination_entry.grid(row=0, column=0, padx=(0, 8), sticky="ew")
+        ctk.CTkButton(
+            destination_row,
+            text="Elegir",
+            width=76,
+            fg_color="transparent",
+            border_width=1,
+            border_color=BORDER,
+            text_color=TEXT,
+            hover_color=BORDER,
+            command=self._choose_destination,
+        ).grid(row=0, column=1)
+
+        self.rights_checkbox = ctk.CTkCheckBox(
+            options,
+            text="Confirmo que tengo permiso para descargar este contenido.",
+            fg_color=PRIMARY,
+            hover_color=PRIMARY_HOVER,
+            border_color=BORDER,
+            text_color=TEXT_MUTED,
+        )
+        self.rights_checkbox.grid(row=3, column=0, columnspan=2, padx=18, pady=(10, 8), sticky="w")
+        self.download_button = ctk.CTkButton(
+            options,
+            text="Agregar a la cola",
+            height=44,
+            fg_color=PRIMARY,
+            hover_color=PRIMARY_HOVER,
+            text_color="#071008",
+            state="disabled",
+            command=self._enqueue_download,
+        )
+        self.download_button.grid(row=4, column=0, columnspan=2, padx=18, pady=(4, 18), sticky="ew")
+
+        queue_header = ctk.CTkFrame(workspace, fg_color="transparent")
+        queue_header.grid(row=4, column=0, padx=34, pady=(4, 7), sticky="ew")
+        ctk.CTkLabel(
+            queue_header,
+            text="Cola de descargas",
+            text_color=TEXT,
+            font=ctk.CTkFont(family=FONT_FAMILY, size=17, weight="bold"),
+        ).pack(side="left")
+        self.queue_frame = ctk.CTkScrollableFrame(workspace, height=180, fg_color="transparent")
+        self.queue_frame.grid(row=5, column=0, padx=34, pady=(0, 14), sticky="ew")
+        self.queue_frame.grid_columnconfigure(0, weight=1)
+        self.empty_queue = ctk.CTkLabel(
+            self.queue_frame,
+            text="Las descargas aparecerán aquí. Los enlaces no se guardan en el historial.",
+            text_color=TEXT_MUTED,
+        )
+        self.empty_queue.grid(row=0, column=0, pady=22)
+
+        self.status_label = ctk.CTkLabel(
+            workspace,
+            text="Listo. Pega un enlace público para comenzar.",
+            text_color=TEXT_MUTED,
+            anchor="w",
+        )
+        self.status_label.grid(row=6, column=0, padx=34, pady=(0, 28), sticky="ew")
+
+    def _paste_url(self) -> None:
+        try:
+            value = self.clipboard_get().strip()
+        except Exception:
+            self._set_status("No se encontró texto en el portapapeles.", error=True)
+            return
+        self.url_entry.delete(0, "end")
+        self.url_entry.insert(0, value)
+
+    def _start_analysis(self) -> None:
+        if self.analyzing:
+            return
+        url = self.url_entry.get().strip()
+        self.analyzing = True
+        self.analyze_button.configure(state="disabled", text="Analizando…")
+        self.download_button.configure(state="disabled")
+        self.media = None
+        self.media_card.grid_forget()
+        self._set_status("Consultando información pública…")
+        threading.Thread(target=self._analyze_worker, args=(url,), daemon=True).start()
+
+    def _analyze_worker(self, url: str) -> None:
+        try:
+            self.events.put(("analysis_ok", analyze_media(url, self.tools)))
+        except DownloaderError as exc:
+            self.events.put(("analysis_error", str(exc)))
+        except Exception:
+            self.events.put(("analysis_error", "Ocurrió un error inesperado al analizar el enlace."))
+
+    def _show_media(self, media: MediaInfo) -> None:
+        self.media = media
+        self.platform_label.configure(text=media.platform.label.upper())
+        self.media_title.configure(text=media.title)
+        meta = " · ".join(item for item in (media.creator, format_duration(media.duration)) if item)
+        self.media_meta.configure(text=meta)
+        self.media_card.grid(row=2, column=0, padx=34, pady=(0, 16), sticky="ew")
+        values = [f"{height}p" for height in reversed(media.qualities)]
+        self.quality_menu.configure(values=values)
+        self.quality_menu.set(f"{media.default_quality}p")
+        self.download_button.configure(state="normal")
+        self._set_status("Enlace listo para agregar a la cola.", success=True)
+
+    def _refresh_format_controls(self) -> None:
+        if self.output_type.get() == "Audio MP3":
+            self.quality_label.configure(text="Calidad de audio")
+            self.quality_menu.configure(values=["128 kbps", "192 kbps", "256 kbps", "320 kbps"])
+            self.quality_menu.set("192 kbps")
+        else:
+            self.quality_label.configure(text="Calidad de video")
+            if self.media:
+                values = [f"{height}p" for height in reversed(self.media.qualities)]
+                self.quality_menu.configure(values=values)
+                self.quality_menu.set(f"{self.media.default_quality}p")
+            else:
+                self.quality_menu.configure(values=["1080p", "720p", "480p", "360p"])
+                self.quality_menu.set("1080p")
+
+    def _choose_destination(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Elegir carpeta de descargas", initialdir=self.destination_entry.get()
+        )
+        if selected:
+            self.destination_entry.delete(0, "end")
+            self.destination_entry.insert(0, selected)
+            self.preferences.destination = selected
+            save_settings(self.preferences)
+
+    def _enqueue_download(self) -> None:
+        if not self.media:
+            self._set_status("Analiza primero un enlace.", error=True)
+            return
+        if not self.rights_checkbox.get():
+            self._set_status("Confirma que tienes permiso para descargar el contenido.", error=True)
+            return
+        destination_text = self.destination_entry.get().strip()
+        if not destination_text:
+            self._set_status("Elige una carpeta de destino.", error=True)
+            return
+        destination = Path(destination_text).expanduser()
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            self._set_status("No se puede escribir en la carpeta seleccionada.", error=True)
+            return
+        if not destination.is_dir():
+            self._set_status("La ruta de destino no es una carpeta.", error=True)
+            return
+        self.preferences.destination = str(destination)
+        save_settings(self.preferences)
+
+        selection = self.quality_menu.get()
+        output_type = "audio" if self.output_type.get() == "Audio MP3" else "video"
+        numeric = int("".join(character for character in selection if character.isdigit()))
+        request = DownloadRequest(
+            self.media.source_url,
+            output_type,
+            destination,
+            quality=numeric if output_type == "video" else 1080,
+            audio_bitrate=numeric if output_type == "audio" else 192,
+        )
+        job = QueueJob(self.next_job_id, self.media.title, request, threading.Event())
+        self.next_job_id += 1
+        if self.empty_queue.winfo_exists():
+            self.empty_queue.grid_remove()
+        card = QueueCard(self.queue_frame, job, lambda job_id=job.job_id: self._cancel_job(job_id))
+        card.grid(row=job.job_id, column=0, pady=(0, 8), sticky="ew")
+        self.queue_cards[job.job_id] = card
+        self.download_queue.put(job)
+        self.rights_checkbox.deselect()
+        self._set_status("Descarga agregada a la cola.", success=True)
+
+    def _download_worker(self) -> None:
+        while True:
+            job = self.download_queue.get()
+            if job.cancel_event.is_set():
+                self.events.put(("cancelled", job.job_id))
+                self.download_queue.task_done()
+                continue
+            try:
+                download_media(
+                    job.request,
+                    self.tools,
+                    job.cancel_event,
+                    lambda event, job_id=job.job_id: self.events.put(("progress", job_id, event)),
+                )
+                self.events.put(("finished", job.job_id, job.request.destination))
+            except DownloadCancelled:
+                self.events.put(("cancelled", job.job_id))
+            except DownloaderError as exc:
+                self.events.put(("failed", job.job_id, str(exc)))
+            except Exception:
+                self.events.put(("failed", job.job_id, "Ocurrió un error inesperado."))
+            finally:
+                self.download_queue.task_done()
+
+    def _cancel_job(self, job_id: int) -> None:
+        card = self.queue_cards.get(job_id)
+        if card:
+            card.job.cancel_event.set()
+            card.status_label.configure(text="Cancelando…")
+            card.action.configure(state="disabled")
+
+    def _process_events(self) -> None:
+        try:
+            while True:
+                event = self.events.get_nowait()
+                kind = event[0]
+                if kind == "analysis_ok":
+                    self.analyzing = False
+                    self.analyze_button.configure(state="normal", text="Analizar")
+                    self._show_media(event[1])
+                elif kind == "analysis_error":
+                    self.analyzing = False
+                    self.analyze_button.configure(state="normal", text="Analizar")
+                    self._set_status(event[1], error=True)
+                elif kind == "progress":
+                    card = self.queue_cards.get(event[1])
+                    if card:
+                        card.update_progress(event[2])
+                elif kind == "finished":
+                    card = self.queue_cards.get(event[1])
+                    if card:
+                        card.finish(event[2])
+                    self._set_status("Descarga completada.", success=True)
+                elif kind == "cancelled":
+                    card = self.queue_cards.get(event[1])
+                    if card:
+                        card.fail("", cancelled=True)
+                elif kind == "failed":
+                    card = self.queue_cards.get(event[1])
+                    if card:
+                        card.fail(event[2])
+                    self._set_status(event[2], error=True)
+        except queue.Empty:
+            pass
+        self.after(100, self._process_events)
+
+    def _set_status(self, message: str, error: bool = False, success: bool = False) -> None:
+        color = DANGER if error else SUCCESS if success else TEXT_MUTED
+        self.status_label.configure(text=message, text_color=color)
+
+    def _apply_appearance(self, value: str) -> None:
+        mapping = {"Sistema": "System", "Claro": "Light", "Oscuro": "Dark"}
+        ctk.set_appearance_mode(mapping.get(value, "System"))
+
+    def _change_appearance(self, value: str) -> None:
+        self.preferences.appearance = value
+        self._apply_appearance(value)
+        save_settings(self.preferences)
+
+
+def main() -> None:
+    ctk.set_default_color_theme("blue")
+    app = BeeTalesDownloaderApp()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

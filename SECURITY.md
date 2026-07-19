@@ -1,5 +1,14 @@
 # Seguridad
 
-Reporta vulnerabilidades de forma privada mediante **Security advisories** en GitHub. No publiques enlaces de prueba que apunten a contenido personal o protegido.
+Reporta vulnerabilidades mediante **Security advisories** de GitHub. No publiques enlaces que apunten a contenido personal, privado o protegido.
 
-El servicio acepta exclusivamente URLs HTTPS de YouTube, TikTok, Instagram y X. No admite credenciales, cookies del navegador, contenido privado, DRM ni Spotify. Los despliegues públicos deben conservar límites de duración, tamaño, concurrencia y solicitudes.
+## Garantías del proyecto
+
+- Solo se aceptan URLs HTTPS de YouTube, TikTok, Instagram y X.
+- No se aceptan credenciales, cookies, puertos personalizados ni redes locales.
+- La aplicación no construye comandos de shell.
+- No existe API pública ni servicio central de procesamiento.
+- Las preferencias no almacenan URLs ni historial.
+- Las entregas deben incluir versiones oficiales de FFmpeg, FFprobe y Deno.
+
+Los usuarios deben descargar versiones únicamente desde los Releases del repositorio oficial y verificar que el dominio sea `github.com/Sorairei`.
