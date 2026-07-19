@@ -1,0 +1,78 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #15202b;
+  background: #f5f7f9;
+  line-height: 1.5;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+
+.shell {
+  width: min(760px, calc(100% - 32px));
+  margin: 64px auto;
+}
+
+header { margin-bottom: 28px; }
+h1 { margin: 4px 0 8px; font-size: clamp(2rem, 6vw, 3.5rem); line-height: 1.05; }
+h2, h3, p { margin-top: 0; }
+.eyebrow { color: #1769aa; font-size: .85rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+
+.panel, .settings {
+  background: white;
+  border: 1px solid #dbe2e8;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgb(20 40 60 / 8%);
+}
+
+label, legend { font-weight: 650; }
+.input-row { display: flex; gap: 10px; margin-top: 8px; }
+input[type="url"], select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #aebbc6;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: white;
+}
+
+button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 18px;
+  color: white;
+  background: #0c79d8;
+  font-weight: 700;
+}
+button:disabled { cursor: wait; opacity: .55; }
+.secondary { color: #243746; background: #e8edf1; }
+
+.message { min-height: 24px; margin-top: 14px; }
+.message.error { color: #a21c1c; }
+.message.success { color: #14733a; }
+.media-card { display: grid; grid-template-columns: 160px 1fr; gap: 18px; margin-top: 18px; padding-top: 18px; border-top: 1px solid #e3e8ec; }
+.media-card img { width: 160px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: #e8edf1; }
+.options { display: grid; gap: 16px; margin-top: 22px; }
+fieldset { display: flex; gap: 18px; border: 0; padding: 0; margin: 0; }
+fieldset legend { margin-bottom: 6px; }
+.consent { font-weight: 500; }
+.progress-wrap { margin-top: 22px; }
+progress { display: block; width: 100%; height: 18px; margin: 8px 0 12px; }
+.settings { margin-top: 18px; box-shadow: none; }
+.settings summary { cursor: pointer; font-weight: 700; }
+.settings[open] summary { margin-bottom: 14px; }
+footer { margin-top: 20px; color: #526572; font-size: .9rem; }
+
+@media (max-width: 600px) {
+  .shell { margin: 32px auto; }
+  .panel, .settings { padding: 18px; }
+  .input-row { flex-direction: column; }
+  .media-card { grid-template-columns: 1fr; }
+  .media-card img { width: 100%; }
+  fieldset { flex-direction: column; gap: 8px; }
+}

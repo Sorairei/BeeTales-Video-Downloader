@@ -1,0 +1,16 @@
+{
+  "name": "beetales-video-downloader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node apps/api/src/index.mjs",
+    "dev:web": "node tools/serve-web.mjs",
+    "start": "node apps/api/src/index.mjs",
+    "test": "node --test",
+    "check": "node --check apps/api/src/index.mjs && node --check apps/web/app.js"
+  }
+}

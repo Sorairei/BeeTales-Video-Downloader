@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Descarga contenido público autorizado como video MP4 o audio MP3.">
+    <title>BeeTales Video Downloader</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">BeeTales · herramienta libre</p>
+        <h1>Descarga video o conviértelo a MP3</h1>
+        <p>Compatible con contenido público de YouTube, TikTok, Instagram y X.</p>
+      </header>
+
+      <section class="panel" aria-labelledby="download-title">
+        <h2 id="download-title">Pega un enlace público</h2>
+        <form id="analyze-form">
+          <label for="media-url">Enlace del video</label>
+          <div class="input-row">
+            <input id="media-url" name="url" type="url" inputmode="url" autocomplete="url" required maxlength="2048" placeholder="https://www.youtube.com/watch?v=...">
+            <button id="analyze-button" type="submit">Analizar</button>
+          </div>
+        </form>
+
+        <div id="message" class="message" role="status" aria-live="polite"></div>
+
+        <article id="media-card" class="media-card" hidden>
+          <img id="thumbnail" alt="" hidden>
+          <div>
+            <p id="platform" class="eyebrow"></p>
+            <h3 id="media-title"></h3>
+            <p id="media-meta"></p>
+          </div>
+        </article>
+
+        <form id="download-form" class="options" hidden>
+          <fieldset>
+            <legend>Formato de salida</legend>
+            <label><input type="radio" name="type" value="video" checked> Video MP4</label>
+            <label><input type="radio" name="type" value="audio"> Audio MP3</label>
+          </fieldset>
+
+          <label id="quality-field" for="quality">Calidad de video
+            <select id="quality" name="quality"></select>
+          </label>
+
+          <label id="bitrate-field" for="audio-bitrate" hidden>Calidad de audio
+            <select id="audio-bitrate" name="audioBitrate">
+              <option value="128">128 kbps</option>
+              <option value="192" selected>192 kbps</option>
+              <option value="256">256 kbps</option>
+              <option value="320">320 kbps</option>
+            </select>
+          </label>
+
+          <label class="consent"><input id="rights" type="checkbox" required> Confirmo que tengo permiso para descargar este contenido.</label>
+          <button id="download-button" type="submit">Preparar descarga</button>
+        </form>
+
+        <div id="progress-wrap" class="progress-wrap" hidden>
+          <label for="progress">Preparando archivo: <span id="progress-label">0%</span></label>
+          <progress id="progress" max="100" value="0"></progress>
+          <button id="cancel-button" class="secondary" type="button">Cancelar</button>
+        </div>
+      </section>
+
+      <details class="settings">
+        <summary>Configuración del servidor</summary>
+        <label for="api-url">URL de la API</label>
+        <div class="input-row">
+          <input id="api-url" type="url" placeholder="http://localhost:8787">
+          <button id="save-api" type="button">Guardar</button>
+        </div>
+      </details>
+
+      <footer>
+        <p>Solo para contenido propio, de dominio público o que tengas autorización para descargar. No admite contenido privado ni protegido.</p>
+      </footer>
+    </main>
+    <script src="./config.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
