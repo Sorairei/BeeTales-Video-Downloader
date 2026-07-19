@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import subprocess
 import sys
 import tempfile
@@ -85,6 +86,92 @@ def _validate_executable(path: Path | None, argument: str, expected: str) -> Non
     _require(expected.lower() in combined, f"La identidad de {expected} no pudo verificarse")
 
 
+def _run_tool(arguments: list[str], label: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
+    try:
+        result = subprocess.run(
+            arguments,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ReleaseSmokeError(f"No se pudo ejecutar la prueba local de {label}") from exc
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()[-500:]
+        raise ReleaseSmokeError(f"La prueba local de {label} fallo: {detail}")
+    return result
+
+
+def _validate_media_pipeline(tools: ToolPaths) -> None:
+    _require(tools.ffmpeg is not None and tools.ffprobe is not None, "Faltan FFmpeg o FFprobe")
+    with tempfile.TemporaryDirectory(prefix="beetales_media_smoke_") as name:
+        directory = Path(name)
+        video = directory / "synthetic.mp4"
+        audio = directory / "synthetic.mp3"
+        _run_tool(
+            [
+                str(tools.ffmpeg),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=24:duration=1",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=1000:duration=1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-shortest",
+                str(video),
+            ],
+            "creacion MP4",
+        )
+        _run_tool(
+            [
+                str(tools.ffmpeg),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(video),
+                "-vn",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "192k",
+                str(audio),
+            ],
+            "conversion MP3",
+        )
+        probe = _run_tool(
+            [
+                str(tools.ffprobe),
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type,codec_name",
+                "-of",
+                "json",
+                str(audio),
+            ],
+            "verificacion MP3",
+        )
+        streams = json.loads(probe.stdout).get("streams", [])
+        _require(
+            any(item.get("codec_type") == "audio" and item.get("codec_name") == "mp3" for item in streams),
+            "La conversion sintetica no produjo audio MP3",
+        )
+
+
 def run_release_smoke_test(root: str | Path | None = None) -> dict[str, Any]:
     release_root = Path(root) if root else packaged_root()
     _validate_assets(release_root)
@@ -95,6 +182,7 @@ def run_release_smoke_test(root: str | Path | None = None) -> dict[str, Any]:
     _validate_executable(tools.ffmpeg, "-version", "ffmpeg")
     _validate_executable(tools.ffprobe, "-version", "ffprobe")
     _validate_executable(tools.deno, "--version", "deno")
+    _validate_media_pipeline(tools)
 
     validated = validate_url("https://www.youtube.com/watch?v=beetales-test")
     _require(validated.platform.id == "youtube", "La validación de plataforma falló")

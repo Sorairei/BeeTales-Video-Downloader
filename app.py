@@ -421,15 +421,17 @@ class BeeTalesDownloaderApp(ctk.CTk):
             hover_color=PRIMARY_HOVER,
             border_color=BORDER,
             text_color=TEXT_MUTED,
+            command=self._refresh_download_state,
         )
         self.rights_checkbox.grid(row=3, column=0, columnspan=2, padx=18, pady=(10, 8), sticky="w")
         self.download_button = ctk.CTkButton(
             options,
             text="Agregar a la cola",
             height=44,
-            fg_color=PRIMARY,
-            hover_color=PRIMARY_HOVER,
-            text_color="#071008",
+            fg_color=SURFACE_ALT,
+            hover_color=SURFACE_ALT,
+            text_color=TEXT,
+            text_color_disabled=TEXT_MUTED,
             state="disabled",
             command=self._enqueue_download,
         )
@@ -476,7 +478,9 @@ class BeeTalesDownloaderApp(ctk.CTk):
         url = self.url_entry.get().strip()
         self.analyzing = True
         self.analyze_button.configure(state="disabled", text="Analizando…")
-        self.download_button.configure(state="disabled")
+        self.download_button.configure(
+            state="disabled", fg_color=SURFACE_ALT, hover_color=SURFACE_ALT
+        )
         self.media = None
         self.media_card.grid_forget()
         self._set_status("Consultando información pública…")
@@ -500,8 +504,17 @@ class BeeTalesDownloaderApp(ctk.CTk):
         values = [f"{height}p" for height in reversed(media.qualities)]
         self.quality_menu.configure(values=values)
         self.quality_menu.set(f"{media.default_quality}p")
-        self.download_button.configure(state="normal")
+        self._refresh_download_state()
         self._set_status("Enlace listo para agregar a la cola.", success=True)
+
+    def _refresh_download_state(self) -> None:
+        ready = self.media is not None and bool(self.rights_checkbox.get())
+        self.download_button.configure(
+            state="normal" if ready else "disabled",
+            fg_color=PRIMARY if ready else SURFACE_ALT,
+            hover_color=PRIMARY_HOVER if ready else SURFACE_ALT,
+            text_color="#071008" if ready else TEXT,
+        )
 
     def _refresh_format_controls(self) -> None:
         if self.output_type.get() == "Audio MP3":
@@ -570,6 +583,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.queue_cards[job.job_id] = card
         self.download_queue.put(job)
         self.rights_checkbox.deselect()
+        self._refresh_download_state()
         self._set_status("Descarga agregada a la cola.", success=True)
 
     def _download_worker(self) -> None:

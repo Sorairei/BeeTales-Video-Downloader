@@ -92,6 +92,7 @@ Para descargar o convertir desde el código fuente también deben estar disponib
 | `theme.py` | Colores y tipografía BeeTales |
 | `release_smoke.py` | Validación integral de recursos, dependencias y configuración |
 | `test_downloader.py` | Pruebas de URLs, formatos y privacidad de preferencias |
+| `qa_visual.py` | Captura local controlada del ejecutable para revisión visual en Windows |
 | `assets/` | Logo, mascota, iconos y recursos visuales |
 | `download_runtimes.ps1` | Descarga local y verificación SHA-256 de FFmpeg y Deno |
 | `build_release.ps1` | Pruebas, compilación y validación local del ejecutable |
@@ -105,9 +106,10 @@ La interfaz nunca construye comandos de shell ni manipula argumentos multimedia.
 ```powershell
 python -m unittest -v test_downloader.py
 python -m py_compile app.py downloader.py settings.py release_smoke.py theme.py
+.\.venv-build\Scripts\python.exe qa_visual.py
 ```
 
-Las pruebas no realizan descargas reales ni contactan las plataformas. La validación de una entrega comprueba además que FFmpeg, FFprobe, Deno, yt-dlp y todos los recursos estén incluidos.
+Las pruebas unitarias no realizan descargas reales ni contactan las plataformas. La validación de una entrega comprueba además que FFmpeg, FFprobe, Deno, yt-dlp y todos los recursos estén incluidos, genera medios sintéticos para validar MP4/MP3 y permite capturar la ventana compilada en `build/qa/`.
 
 ## Compilar para Windows
 
