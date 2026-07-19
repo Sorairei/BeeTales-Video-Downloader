@@ -7,11 +7,14 @@ import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from localization import DEFAULT_LANGUAGE, normalize_language
+
 
 @dataclass
 class Settings:
     destination: str
-    appearance: str = "Sistema"
+    appearance: str = "system"
+    language: str = DEFAULT_LANGUAGE
 
 
 def default_downloads_directory() -> Path:
@@ -35,10 +38,21 @@ def load_settings(path: Path | None = None) -> Settings:
         data = json.loads(target.read_text(encoding="utf-8"))
         destination = data.get("destination")
         appearance = data.get("appearance")
+        language = data.get("language")
         if isinstance(destination, str) and destination:
             defaults.destination = destination
-        if appearance in {"Sistema", "Claro", "Oscuro"}:
-            defaults.appearance = appearance
+        appearance_migration = {
+            "Sistema": "system",
+            "Claro": "light",
+            "Oscuro": "dark",
+            "System": "system",
+            "Light": "light",
+            "Dark": "dark",
+        }
+        migrated_appearance = appearance_migration.get(appearance, appearance)
+        if migrated_appearance in {"system", "light", "dark"}:
+            defaults.appearance = migrated_appearance
+        defaults.language = normalize_language(language)
     except (OSError, ValueError, TypeError):
         pass
     return defaults

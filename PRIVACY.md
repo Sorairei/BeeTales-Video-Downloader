@@ -10,6 +10,7 @@ BeeTales Video Downloader processes media locally and does not operate download 
 | Downloaded media | Written directly to the destination selected by the user |
 | Destination preference | Stored in the local Windows user profile |
 | Appearance preference | Stored in the local Windows user profile |
+| Language preference | Stored in the local Windows user profile |
 | Queue and history | Kept in memory and discarded when the application closes |
 
 The application does not create BeeTales accounts, display advertising, include telemetry or analytics, sell personal data, upload downloaded files to BeeTales, store URL history, or synchronize information between devices.

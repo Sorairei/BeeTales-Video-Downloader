@@ -92,6 +92,7 @@ def capture(
     output: Path,
     timeout: float = 30.0,
     appearance: str | None = None,
+    language: str = "en",
 ) -> dict[str, object]:
     if sys.platform != "win32":
         raise RuntimeError("Esta prueba visual solo funciona en Windows.")
@@ -102,12 +103,16 @@ def capture(
     existing_handles = {item[0] for item in find_windows(executable.name)}
     environment = None
     if appearance:
-        profile = output.parent / f"profile-{appearance.casefold()}"
+        profile = output.parent / f"profile-{appearance.casefold()}-{language}"
         settings_directory = profile / "BeeTales Video Downloader"
         settings_directory.mkdir(parents=True, exist_ok=True)
         (settings_directory / "settings.json").write_text(
             json.dumps(
-                {"destination": str(output.parent / "downloads"), "appearance": appearance},
+                {
+                    "destination": str(output.parent / "downloads"),
+                    "appearance": appearance,
+                    "language": language,
+                },
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -146,6 +151,7 @@ def capture(
             "loader_process_id": process.pid,
             "window_process_id": window_process_id,
             "appearance": appearance or "Sistema",
+            "language": language,
         }
     finally:
         if window:
@@ -170,8 +176,16 @@ def main() -> None:
         default=Path("build/qa/beetales-window.png"),
     )
     parser.add_argument("--appearance", choices=("Sistema", "Claro", "Oscuro"))
+    parser.add_argument("--language", choices=("en", "es", "pl", "pt"), default="en")
     arguments = parser.parse_args()
-    print(capture(arguments.executable, arguments.output, appearance=arguments.appearance))
+    print(
+        capture(
+            arguments.executable,
+            arguments.output,
+            appearance=arguments.appearance,
+            language=arguments.language,
+        )
+    )
 
 
 if __name__ == "__main__":

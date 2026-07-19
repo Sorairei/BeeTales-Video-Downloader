@@ -13,6 +13,7 @@ from typing import Any
 from PIL import Image
 
 from accessibility import KEYBOARD_SHORTCUTS
+from localization import DEFAULT_LANGUAGE, LANGUAGE_NAMES, TRANSLATIONS, tr
 from downloader import (
     DownloadRequest,
     ToolPaths,
@@ -224,6 +225,17 @@ def run_release_smoke_test(root: str | Path | None = None) -> dict[str, Any]:
     _require(APP_VERSION in render_windows_version_info(), "Los metadatos de versión no coinciden")
     _require(archive_name().startswith("BeeTales-Video-Downloader-v"), "Nombre de entrega inválido")
     _require(len(KEYBOARD_SHORTCUTS) >= 5, "Faltan atajos de accesibilidad")
+    _require(DEFAULT_LANGUAGE == "en", "English is not the default interface language")
+    translation_keys = set(TRANSLATIONS[DEFAULT_LANGUAGE])
+    _require(
+        tuple(LANGUAGE_NAMES) == ("en", "es", "pl", "pt"),
+        "The required interface languages are incomplete",
+    )
+    _require(
+        all(set(messages) == translation_keys for messages in TRANSLATIONS.values()),
+        "A language is missing interface messages",
+    )
+    _require(tr("heading") == "Download authorized media", "English fallback is not active")
     _require(
         all(ratio >= 4.5 for ratio in audited_contrast_pairs().values()),
         "El tema contiene texto con contraste inferior a WCAG AA",
@@ -247,7 +259,7 @@ def run_release_smoke_test(root: str | Path | None = None) -> dict[str, Any]:
 
     with tempfile.TemporaryDirectory(prefix="beetales_downloader_smoke_") as name:
         settings_file = Path(name) / "settings.json"
-        expected = Settings(str(Path(name) / "Descargas"), "Oscuro")
+        expected = Settings(str(Path(name) / "Downloads"), "dark", "pl")
         save_settings(expected, settings_file)
         _require(load_settings(settings_file) == expected, "Las preferencias locales no son consistentes")
 

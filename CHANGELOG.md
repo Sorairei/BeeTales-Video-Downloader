@@ -17,6 +17,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - In-memory public thumbnail previews for YouTube, TikTok, Instagram, and X.
 - A queue cleanup action that removes completed, cancelled, and failed items without affecting active jobs.
 - Final MP4 probing and automatic local H.264/AAC compatibility conversion when required.
+- Complete English, Spanish, Polish, and Portuguese interfaces with English as the default and fallback.
+- A source-link clear action and `Esc` shortcut that reset analysis without changing queued jobs.
 
 ### Changed
 
@@ -24,6 +26,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Improved success and error colors with theme-specific accessible variants.
 - Reorganized the desktop workspace into a clearer three-step premium BeeTales experience.
 - Preferred Instagram's combined H.264/AAC formats at compatible vertical resolutions to avoid VP9-in-MP4 playback issues.
+- Replaced the single scrolling workspace with an enterprise two-zone workflow and persistent queue panel.
+- Migrated appearance preferences to stable internal codes and added a persistent language preference.
 
 ### Security
 

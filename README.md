@@ -69,9 +69,10 @@ Processing runs on the user's computer through yt-dlp, FFmpeg, FFprobe, and Deno
 | Queue | Sequential downloads with per-item progress, speed, remaining time, and cancellation |
 | Queue cleanup | Completed, cancelled, and failed items can be removed without interrupting active jobs |
 | Preview | Public thumbnails are loaded temporarily in memory to confirm the selected media |
+| Languages | English by default, with complete Spanish, Polish, and Portuguese interfaces |
 | Reliability | Active duplicates are rejected and application shutdown waits for local operations |
-| Privacy | Destination and appearance preferences are local; URLs and download history are not stored |
-| Interface | Branded BeeTales desktop experience with light, dark, and system appearance modes |
+| Privacy | Destination, language, and appearance preferences are local; URLs and download history are not stored |
+| Interface | Enterprise two-zone BeeTales workspace with light, dark, and system appearance modes |
 | Funding | Optional GitHub Sponsors support without advertisements, premium features, or preferential access |
 
 ## Supported sources and outputs
@@ -93,6 +94,7 @@ Spotify, bulk downloads, playlists, private content, accounts, cookies, payment 
 ## How it works
 
 1. The user pastes a supported public-media URL.
+   The source field can be safely cleared with its clear action or `Esc` without changing queued jobs.
 2. The application validates the HTTPS host and individual-content route locally.
 3. yt-dlp reads public metadata and reports the source formats without adding a playlist.
 4. A temporary public thumbnail, title, creator, and duration help confirm the selected media.
@@ -111,7 +113,7 @@ Cancelling signals the active job through yt-dlp progress and post-processing ho
 | Source URLs | Used in memory for the current session and never added to settings or history |
 | Public thumbnails | Validated as public HTTPS images, limited to 5 MB, displayed from memory, and never persisted |
 | Downloaded media | Written directly to the user-selected local directory |
-| Preferences | Only destination and appearance are stored in a local JSON file |
+| Preferences | Only destination, language, and appearance are stored in a local JSON file |
 | Accounts and authentication | Not used |
 | Cookies and analytics | Not included |
 | BeeTales backend or database | Not required and not operated |
@@ -133,15 +135,16 @@ flowchart LR
     PLATFORM --> YTDLP[Local yt-dlp engine]
     YTDLP --> FFMPEG[Local FFmpeg processing]
     FFMPEG --> FILE[User-selected folder]
-    SETTINGS[Destination and appearance] <--> STORAGE[Local settings JSON]
+    SETTINGS[Destination, language and appearance] <--> STORAGE[Local settings JSON]
 ```
 
 ### Design boundaries
 
-- **Interface layer:** `app.py` owns CustomTkinter widgets, user interaction, progress cards, and safe application shutdown.
+- **Interface layer:** `app.py` owns the two-zone CustomTkinter workspace, user interaction, progress cards, and safe application shutdown.
 - **Queue layer:** `queue_manager.py` owns deterministic job states, active-request identities, duplicate protection, and coordinated cancellation.
 - **Media layer:** `downloader.py` owns URL validation, tool detection, yt-dlp options, metadata normalization, FFmpeg selection, and safe errors.
-- **Preference layer:** `settings.py` stores only the destination and appearance using an atomic local JSON replacement.
+- **Localization layer:** `localization.py` provides complete, stable-key translations with English as the default and fallback.
+- **Preference layer:** `settings.py` stores only the destination, language, and appearance using an atomic local JSON replacement.
 - **Theme layer:** `theme.py` contains the BeeTales colors and typography used by the desktop interface.
 - **Validation layer:** `test_downloader.py`, `release_smoke.py`, and `qa_visual.py` cover deterministic behavior, packaged tools, multimedia output, and the compiled window.
 - **Runtime layer:** `vendor/` contains the verified FFmpeg, FFprobe, and Deno executables bundled into the local Windows application.
@@ -171,12 +174,13 @@ flowchart LR
 | `queue_manager.py` | Queue states, duplicate detection, cancellation, and active job identities |
 | `release_metadata.py` | Application version, Windows metadata, deterministic ZIP creation, manifest, and checksums |
 | `settings.py` | Atomic local preferences without URL or download history |
+| `localization.py` | English, Spanish, Polish, and Portuguese interface messages and safe error localization |
 | `theme.py` | BeeTales desktop colors and typography |
 | `assets/` | Logo, mascot, application icons, avatar, and social-video artwork |
 | `vendor/` | Bundled FFmpeg, FFprobe, and Deno Windows runtimes |
 | `test_downloader.py` | Unit tests for URLs, formats, privacy, errors, settings, and queue behavior |
 | `release_smoke.py` | Local release validation for assets, dependencies, runtimes, MP4, and MP3 |
-| `qa_visual.py` | Isolated light/dark screenshots and process-cleanup validation for the compiled window |
+| `qa_visual.py` | Isolated appearance/language screenshots and process-cleanup validation for the compiled window |
 | `download_runtimes.ps1` | Official runtime download and SHA-256 verification |
 | `build_release.ps1` | Local tests, compilation, executable smoke test, ZIP packaging, and SHA-256 output |
 | `legacy-web/` | Historical GitHub Pages and Node.js API prototype retained for reference |
@@ -244,9 +248,9 @@ All project tests and release checks can be executed locally:
 
 ```powershell
 .\.venv-build\Scripts\python.exe -m unittest -v test_downloader.py
-.\.venv-build\Scripts\python.exe -m py_compile app.py downloader.py queue_manager.py release_metadata.py settings.py release_smoke.py theme.py
-.\.venv-build\Scripts\python.exe qa_visual.py --appearance Claro --output build/qa/beetales-light.png
-.\.venv-build\Scripts\python.exe qa_visual.py --appearance Oscuro --output build/qa/beetales-dark.png
+.\.venv-build\Scripts\python.exe -m py_compile app.py downloader.py localization.py queue_manager.py release_metadata.py settings.py release_smoke.py theme.py
+.\.venv-build\Scripts\python.exe qa_visual.py --appearance Claro --language en --output build/qa/beetales-light.png
+.\.venv-build\Scripts\python.exe qa_visual.py --appearance Oscuro --language pl --output build/qa/beetales-dark-pl.png
 .\build_release.ps1
 ```
 
@@ -257,7 +261,7 @@ All project tests and release checks can be executed locally:
 | Source smoke test | Verify assets, dependencies, runtime identities, settings, and multimedia options |
 | Synthetic MP4 and MP3 test | Use bundled FFmpeg and FFprobe without downloading third-party content |
 | Compiled smoke test | Run the packaged executable in hidden validation mode |
-| Visual QA | Capture isolated light and dark profiles and confirm child processes are cleaned up |
+| Visual QA | Capture isolated appearance and language profiles and confirm child processes are cleaned up |
 | Release package | Produce the Windows executable, versioned ZIP, manifest, and checksum file |
 
 Unit tests do not contact supported platforms or perform real downloads. Public-platform metadata checks, when intentionally performed, analyze individual test links without saving their media.
@@ -270,11 +274,12 @@ Normal-size interface text is tested against WCAG AA's minimum `4.5:1` contrast 
 | --- | --- |
 | `Ctrl+L` | Focus and select the public URL field |
 | `Enter` | Analyze the URL while the URL field is focused |
+| `Esc` | Clear the source link and analyzed preview without changing the queue |
 | `Ctrl+Enter` | Add the prepared request to the queue |
 | `Ctrl+O` | Open the destination folder selector |
 | `F1` | Display keyboard and accessibility help |
 
-The URL field receives initial focus when the application opens. Keyboard shortcuts are shown in the interface and verified by the local test suite.
+The URL field receives initial focus when the application opens. Keyboard shortcuts are shown in the interface and verified in all four interface languages by the local test suite.
 
 ## Limitations
 

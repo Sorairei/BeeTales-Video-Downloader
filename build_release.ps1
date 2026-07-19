@@ -35,7 +35,7 @@ try {
     Write-Host "Ejecutando pruebas..."
     & $python -m unittest -v test_downloader.py
     if ($LASTEXITCODE -ne 0) { throw "Las pruebas fallaron." }
-    & $python -m py_compile accessibility.py app.py downloader.py queue_manager.py release_metadata.py settings.py release_smoke.py theme.py qa_visual.py
+    & $python -m py_compile accessibility.py app.py downloader.py localization.py queue_manager.py release_metadata.py settings.py release_smoke.py theme.py qa_visual.py
     if ($LASTEXITCODE -ne 0) { throw "La compilación sintáctica falló." }
 
     Write-Host "Validando recursos y dependencias..."

@@ -8,6 +8,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from accessibility import KEYBOARD_SHORTCUTS, keyboard_help_text
+from localization import (
+    DEFAULT_LANGUAGE,
+    LANGUAGE_NAMES,
+    TRANSLATIONS,
+    appearance_labels,
+    localize_engine_error,
+    tr,
+)
 from downloader import (
     MAX_DURATION_SECONDS,
     DownloadRequest,
@@ -207,12 +215,46 @@ class SettingsTests(unittest.TestCase):
     def test_settings_roundtrip_without_urls_or_history(self) -> None:
         with tempfile.TemporaryDirectory() as name:
             path = Path(name) / "settings.json"
-            expected = Settings("C:/Media", "Oscuro")
+            expected = Settings("C:/Media", "dark", "pl")
             save_settings(expected, path)
             self.assertEqual(load_settings(path), expected)
             contents = path.read_text(encoding="utf-8")
             self.assertNotIn("url", contents.lower())
             self.assertNotIn("history", contents.lower())
+
+    def test_legacy_spanish_appearance_is_migrated(self) -> None:
+        with tempfile.TemporaryDirectory() as name:
+            path = Path(name) / "settings.json"
+            path.write_text(
+                '{"destination": "C:/Media", "appearance": "Oscuro"}',
+                encoding="utf-8",
+            )
+            settings = load_settings(path)
+            self.assertEqual(settings.appearance, "dark")
+            self.assertEqual(settings.language, "en")
+
+
+class LocalizationTests(unittest.TestCase):
+    def test_english_is_default_and_all_languages_are_complete(self) -> None:
+        self.assertEqual(DEFAULT_LANGUAGE, "en")
+        self.assertEqual(tuple(LANGUAGE_NAMES), ("en", "es", "pl", "pt"))
+        expected_keys = set(TRANSLATIONS["en"])
+        for language, translations in TRANSLATIONS.items():
+            with self.subTest(language=language):
+                self.assertEqual(set(translations), expected_keys)
+
+    def test_translations_and_appearance_labels_use_stable_codes(self) -> None:
+        self.assertEqual(tr("heading"), "Download authorized media")
+        self.assertEqual(tr("heading", "es"), "Descarga contenido autorizado")
+        self.assertEqual(tr("heading", "pl"), "Pobierz autoryzowane multimedia")
+        self.assertEqual(tr("heading", "pt"), "Baixe mídia autorizada")
+        self.assertEqual(set(appearance_labels("pt")), {"system", "light", "dark"})
+
+    def test_engine_errors_are_localized_without_raw_details(self) -> None:
+        for language in LANGUAGE_NAMES:
+            localized = localize_engine_error("This video is private; sign in", language)
+            self.assertEqual(localized, tr("error_private", language))
+            self.assertNotIn("sign in", localized.lower())
 
 
 class QueueManagerTests(unittest.TestCase):
@@ -328,6 +370,7 @@ class AccessibilityTests(unittest.TestCase):
         self.assertEqual(len(actions), len(set(actions)))
         for shortcut in KEYBOARD_SHORTCUTS:
             self.assertIn(shortcut.keys, help_text)
+        self.assertIn("Esc", keys)
 
 
 if __name__ == "__main__":

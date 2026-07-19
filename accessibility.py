@@ -4,30 +4,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from localization import DEFAULT_LANGUAGE, tr
+
 
 @dataclass(frozen=True)
 class KeyboardShortcut:
     keys: str
     action: str
-    description: str
+    description_key: str
 
 
 KEYBOARD_SHORTCUTS = (
-    KeyboardShortcut("Ctrl+L", "focus_url", "Enfocar y seleccionar el enlace público"),
-    KeyboardShortcut("Enter", "analyze", "Analizar el enlace desde el campo de URL"),
-    KeyboardShortcut("Ctrl+Enter", "enqueue", "Agregar la descarga preparada a la cola"),
-    KeyboardShortcut("Ctrl+O", "destination", "Elegir la carpeta de destino"),
-    KeyboardShortcut("F1", "help", "Mostrar esta ayuda de teclado"),
+    KeyboardShortcut("Ctrl+L", "focus_url", "shortcut_focus"),
+    KeyboardShortcut("Enter", "analyze", "shortcut_analyze"),
+    KeyboardShortcut("Esc", "clear_url", "shortcut_clear"),
+    KeyboardShortcut("Ctrl+Enter", "enqueue", "shortcut_enqueue"),
+    KeyboardShortcut("Ctrl+O", "destination", "shortcut_destination"),
+    KeyboardShortcut("F1", "help", "shortcut_help"),
 )
 
 
-def keyboard_help_text() -> str:
-    rows = ["Atajos de teclado de BeeTales", ""]
-    rows.extend(f"{item.keys}: {item.description}" for item in KEYBOARD_SHORTCUTS)
+def keyboard_help_text(language: str = DEFAULT_LANGUAGE) -> str:
+    rows = [tr("help_heading", language), ""]
     rows.extend(
-        (
-            "",
-            "Los estados también se describen con texto; el color nunca es el único indicador.",
-        )
+        f"{item.keys}: {tr(item.description_key, language)}" for item in KEYBOARD_SHORTCUTS
     )
+    rows.extend(("", tr("help_note", language)))
     return "\n".join(rows)
