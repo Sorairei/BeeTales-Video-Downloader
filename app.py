@@ -25,6 +25,7 @@ if "--smoke-test" in sys.argv:
 import customtkinter as ctk
 from PIL import Image
 
+from accessibility import keyboard_help_text
 from downloader import (
     DownloadCancelled,
     DownloadRequest,
@@ -40,6 +41,7 @@ from queue_manager import DuplicateJobError, QueueJob, QueueManager
 from release_metadata import APP_VERSION
 from theme import (
     APP_BACKGROUND,
+    ACCENT_TEXT,
     BORDER,
     DANGER,
     DANGER_HOVER,
@@ -50,6 +52,8 @@ from theme import (
     ORANGE,
     PRIMARY,
     PRIMARY_HOVER,
+    SEGMENT_SELECTED,
+    SEGMENT_SELECTED_HOVER,
     SIDEBAR_MUTED,
     SIDEBAR_TEXT,
     SPONSOR,
@@ -197,8 +201,10 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self._apply_appearance(self.preferences.appearance)
         self._build_sidebar()
         self._build_workspace()
+        self._bind_keyboard_shortcuts()
         self.protocol("WM_DELETE_WINDOW", self._request_close)
         self.after(100, self._process_events)
+        self.after(150, self._focus_url)
         self.download_worker = threading.Thread(target=self._download_worker, daemon=True)
         self.download_worker.start()
 
@@ -315,7 +321,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         input_card.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             input_card,
-            text="Enlace público",
+            text="Enlace público · Ctrl+L",
             text_color=TEXT,
             font=ctk.CTkFont(family=FONT_FAMILY, weight="bold"),
         ).grid(row=0, column=0, columnspan=3, padx=18, pady=(16, 6), sticky="w")
@@ -327,6 +333,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
             fg_color=SURFACE_ALT,
         )
         self.url_entry.grid(row=1, column=0, padx=(18, 8), pady=(0, 16), sticky="ew")
+        self.url_entry.bind("<Return>", self._shortcut_analyze)
         ctk.CTkButton(
             input_card,
             text="Pegar",
@@ -354,7 +361,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.media_card = ctk.CTkFrame(workspace, fg_color=SURFACE, border_width=1, border_color=BORDER)
         self.media_card.grid_columnconfigure(0, weight=1)
         self.platform_label = ctk.CTkLabel(
-            self.media_card, text="", text_color=PRIMARY, anchor="w",
+            self.media_card, text="", text_color=ACCENT_TEXT, anchor="w",
             font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold")
         )
         self.platform_label.grid(row=0, column=0, padx=18, pady=(15, 1), sticky="w")
@@ -375,8 +382,8 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.output_type = ctk.CTkSegmentedButton(
             options,
             values=["Video MP4", "Audio MP3"],
-            selected_color=PRIMARY,
-            selected_hover_color=PRIMARY_HOVER,
+            selected_color=SEGMENT_SELECTED,
+            selected_hover_color=SEGMENT_SELECTED_HOVER,
             unselected_color=SURFACE_ALT,
             unselected_hover_color=BORDER,
             text_color=TEXT,
@@ -397,7 +404,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         )
         self.quality_menu.grid(row=1, column=1, padx=(0, 18), pady=8, sticky="ew")
 
-        ctk.CTkLabel(options, text="Guardar en", text_color=TEXT).grid(
+        ctk.CTkLabel(options, text="Guardar en · Ctrl+O", text_color=TEXT).grid(
             row=2, column=0, padx=(18, 12), pady=8, sticky="w"
         )
         destination_row = ctk.CTkFrame(options, fg_color="transparent")
@@ -430,7 +437,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.rights_checkbox.grid(row=3, column=0, columnspan=2, padx=18, pady=(10, 8), sticky="w")
         self.download_button = ctk.CTkButton(
             options,
-            text="Agregar a la cola",
+            text="Agregar a la cola · Ctrl+Enter",
             height=44,
             fg_color=SURFACE_ALT,
             hover_color=SURFACE_ALT,
@@ -449,6 +456,18 @@ class BeeTalesDownloaderApp(ctk.CTk):
             text_color=TEXT,
             font=ctk.CTkFont(family=FONT_FAMILY, size=17, weight="bold"),
         ).pack(side="left")
+        ctk.CTkButton(
+            queue_header,
+            text="Atajos (F1)",
+            width=92,
+            height=28,
+            fg_color="transparent",
+            border_width=1,
+            border_color=BORDER,
+            text_color=TEXT,
+            hover_color=BORDER,
+            command=self._show_keyboard_help,
+        ).pack(side="right")
         self.queue_frame = ctk.CTkScrollableFrame(workspace, height=180, fg_color="transparent")
         self.queue_frame.grid(row=5, column=0, padx=34, pady=(0, 14), sticky="ew")
         self.queue_frame.grid_columnconfigure(0, weight=1)
@@ -466,6 +485,38 @@ class BeeTalesDownloaderApp(ctk.CTk):
             anchor="w",
         )
         self.status_label.grid(row=6, column=0, padx=34, pady=(0, 28), sticky="ew")
+
+    def _bind_keyboard_shortcuts(self) -> None:
+        self.bind_all("<Control-l>", self._focus_url)
+        self.bind_all("<Control-o>", self._shortcut_destination)
+        self.bind_all("<Control-Return>", self._shortcut_enqueue)
+        self.bind_all("<F1>", self._show_keyboard_help)
+
+    def _focus_url(self, _event: Any = None) -> str:
+        if not self.closing:
+            self.url_entry.focus_set()
+            self.url_entry.select_range(0, "end")
+            self.url_entry.icursor("end")
+        return "break"
+
+    def _shortcut_analyze(self, _event: Any = None) -> str:
+        if not self.closing and not self.analyzing:
+            self._start_analysis()
+        return "break"
+
+    def _shortcut_destination(self, _event: Any = None) -> str:
+        if not self.closing:
+            self._choose_destination()
+        return "break"
+
+    def _shortcut_enqueue(self, _event: Any = None) -> str:
+        if not self.closing and self.download_button.cget("state") == "normal":
+            self._enqueue_download()
+        return "break"
+
+    def _show_keyboard_help(self, _event: Any = None) -> str:
+        messagebox.showinfo("Accesibilidad y teclado", keyboard_help_text())
+        return "break"
 
     def _paste_url(self) -> None:
         try:

@@ -12,6 +12,7 @@ from typing import Any
 
 from PIL import Image
 
+from accessibility import KEYBOARD_SHORTCUTS
 from downloader import (
     DownloadRequest,
     ToolPaths,
@@ -23,6 +24,7 @@ from downloader import (
 )
 from settings import Settings, load_settings, save_settings
 from release_metadata import APP_VERSION, archive_name, render_windows_version_info
+from theme import audited_contrast_pairs
 
 
 REQUIRED_ASSETS = (
@@ -186,6 +188,11 @@ def run_release_smoke_test(root: str | Path | None = None) -> dict[str, Any]:
     _validate_media_pipeline(tools)
     _require(APP_VERSION in render_windows_version_info(), "Los metadatos de versión no coinciden")
     _require(archive_name().startswith("BeeTales-Video-Downloader-v"), "Nombre de entrega inválido")
+    _require(len(KEYBOARD_SHORTCUTS) >= 5, "Faltan atajos de accesibilidad")
+    _require(
+        all(ratio >= 4.5 for ratio in audited_contrast_pairs().values()),
+        "El tema contiene texto con contraste inferior a WCAG AA",
+    )
 
     validated = validate_url("https://www.youtube.com/watch?v=beetales-test")
     _require(validated.platform.id == "youtube", "La validación de plataforma falló")

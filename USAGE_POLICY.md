@@ -1,14 +1,17 @@
-# Política de uso aceptable
+# Acceptable Use Policy
 
-BeeTales Video Downloader está destinado a contenido propio, de dominio público, con licencia que permita su descarga o para el cual el usuario tenga autorización expresa.
+BeeTales Video Downloader is intended for media owned by the user, public-domain material, content distributed under a compatible license, or content for which the user has explicit authorization.
 
-No se permite usar el proyecto para:
+The project must not be used to:
 
-- infringir derechos de autor o privacidad;
-- evadir autenticación, pagos, restricciones territoriales o DRM;
-- acceder a contenido privado;
-- realizar descargas masivas o automatizadas;
-- eliminar marcas de agua mediante procesamiento;
-- acosar, archivar o redistribuir contenido personal sin autorización.
+- infringe copyright, privacy, publicity, contractual, or other rights;
+- bypass authentication, payments, geographic restrictions, or DRM;
+- access private or account-restricted content;
+- perform bulk, automated, or abusive downloads;
+- artificially remove watermarks;
+- harass, archive, identify, or redistribute personal content without authorization;
+- violate the terms, policies, or applicable laws governing a platform or jurisdiction.
 
-El usuario es responsable de verificar los permisos aplicables. La compatibilidad técnica con una URL no concede derechos sobre su contenido ni implica afiliación con la plataforma.
+Technical compatibility with a public URL does not grant permission to download, copy, publish, or redistribute its media. The user is responsible for confirming authorization and complying with applicable law and platform requirements.
+
+BeeTales is not affiliated with YouTube, TikTok, Instagram, X, or their respective owners.

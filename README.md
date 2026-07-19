@@ -48,6 +48,7 @@ Processing runs on the user's computer through yt-dlp, FFmpeg, FFprobe, and Deno
 - [Local development](#local-development)
 - [Local runtime setup](#local-runtime-setup)
 - [Quality and validation](#quality-and-validation)
+- [Accessibility](#accessibility)
 - [Limitations](#limitations)
 - [Troubleshooting](#troubleshooting)
 - [Responsible use](#responsible-use)
@@ -158,6 +159,7 @@ flowchart LR
 | Path | Responsibility |
 | --- | --- |
 | `app.py` | CustomTkinter window, interaction, background workers, and controlled shutdown |
+| `accessibility.py` | Keyboard shortcut metadata and accessible help content |
 | `downloader.py` | URL validation, tool detection, yt-dlp integration, formats, progress, and safe errors |
 | `queue_manager.py` | Queue states, duplicate detection, cancellation, and active job identities |
 | `release_metadata.py` | Application version, Windows metadata, deterministic ZIP creation, manifest, and checksums |
@@ -167,7 +169,7 @@ flowchart LR
 | `vendor/` | Bundled FFmpeg, FFprobe, and Deno Windows runtimes |
 | `test_downloader.py` | Unit tests for URLs, formats, privacy, errors, settings, and queue behavior |
 | `release_smoke.py` | Local release validation for assets, dependencies, runtimes, MP4, and MP3 |
-| `qa_visual.py` | Controlled local screenshot and process-cleanup validation for the compiled window |
+| `qa_visual.py` | Isolated light/dark screenshots and process-cleanup validation for the compiled window |
 | `download_runtimes.ps1` | Official runtime download and SHA-256 verification |
 | `build_release.ps1` | Local tests, compilation, executable smoke test, ZIP packaging, and SHA-256 output |
 | `legacy-web/` | Historical GitHub Pages and Node.js API prototype retained for reference |
@@ -188,7 +190,7 @@ flowchart LR
 | `release-manifest-vX.Y.Z.json` | Machine-readable product, version, platform, filename, size, and SHA-256 metadata |
 | `SHA256SUMS-vX.Y.Z.txt` | Standard checksum entry for local or release verification |
 
-The package includes `VERSION.txt`, the README, changelog, project license, privacy and usage policies, and third-party notices. Version history is maintained in [CHANGELOG.md](CHANGELOG.md).
+The package includes `VERSION.txt`, the README, changelog, project license, privacy, security and usage policies, and third-party notices. Version history is maintained in [CHANGELOG.md](CHANGELOG.md).
 
 ## Windows application
 
@@ -236,7 +238,8 @@ All project tests and release checks can be executed locally:
 ```powershell
 .\.venv-build\Scripts\python.exe -m unittest -v test_downloader.py
 .\.venv-build\Scripts\python.exe -m py_compile app.py downloader.py queue_manager.py release_metadata.py settings.py release_smoke.py theme.py
-.\.venv-build\Scripts\python.exe qa_visual.py
+.\.venv-build\Scripts\python.exe qa_visual.py --appearance Claro --output build/qa/beetales-light.png
+.\.venv-build\Scripts\python.exe qa_visual.py --appearance Oscuro --output build/qa/beetales-dark.png
 .\build_release.ps1
 ```
 
@@ -247,10 +250,24 @@ All project tests and release checks can be executed locally:
 | Source smoke test | Verify assets, dependencies, runtime identities, settings, and multimedia options |
 | Synthetic MP4 and MP3 test | Use bundled FFmpeg and FFprobe without downloading third-party content |
 | Compiled smoke test | Run the packaged executable in hidden validation mode |
-| Visual QA | Launch the local executable, capture the window, and confirm child processes are cleaned up |
+| Visual QA | Capture isolated light and dark profiles and confirm child processes are cleaned up |
 | Release package | Produce the Windows executable, versioned ZIP, manifest, and checksum file |
 
 Unit tests do not contact supported platforms or perform real downloads. Public-platform metadata checks, when intentionally performed, analyze individual test links without saving their media.
+
+## Accessibility
+
+Normal-size interface text is tested against WCAG AA's minimum `4.5:1` contrast ratio in both light and dark modes. Progress, success, failure, and cancellation states always include text so color is never the only indicator.
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+L` | Focus and select the public URL field |
+| `Enter` | Analyze the URL while the URL field is focused |
+| `Ctrl+Enter` | Add the prepared request to the queue |
+| `Ctrl+O` | Open the destination folder selector |
+| `F1` | Display keyboard and accessibility help |
+
+The URL field receives initial focus when the application opens. Keyboard shortcuts are shown in the interface and verified by the local test suite.
 
 ## Limitations
 

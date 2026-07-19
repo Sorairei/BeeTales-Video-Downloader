@@ -35,7 +35,7 @@ try {
     Write-Host "Ejecutando pruebas..."
     & $python -m unittest -v test_downloader.py
     if ($LASTEXITCODE -ne 0) { throw "Las pruebas fallaron." }
-    & $python -m py_compile app.py downloader.py queue_manager.py release_metadata.py settings.py release_smoke.py theme.py qa_visual.py
+    & $python -m py_compile accessibility.py app.py downloader.py queue_manager.py release_metadata.py settings.py release_smoke.py theme.py qa_visual.py
     if ($LASTEXITCODE -ne 0) { throw "La compilación sintáctica falló." }
 
     Write-Host "Validando recursos y dependencias..."
@@ -83,7 +83,7 @@ try {
     }
     New-Item -ItemType Directory -Path $resolvedStaging -Force | Out-Null
     Copy-Item -LiteralPath $executable -Destination $packageStaging -Force
-    Copy-Item -LiteralPath "README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "USAGE_POLICY.md" -Destination $packageStaging -Force
+    Copy-Item -LiteralPath "README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "PRIVACY.md", "SECURITY.md", "USAGE_POLICY.md" -Destination $packageStaging -Force
     Set-Content -LiteralPath (Join-Path $packageStaging "VERSION.txt") -Value $version -Encoding ascii
     & $python release_metadata.py package $packageStaging $archive $manifest $checksums
     if ($LASTEXITCODE -ne 0) { throw "No se pudo crear la entrega reproducible." }

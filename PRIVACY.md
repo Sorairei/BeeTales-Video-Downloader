@@ -1,14 +1,19 @@
-# Política de privacidad
+# Privacy Policy
 
-BeeTales Video Downloader procesa todo localmente y no opera servidores de descarga.
+BeeTales Video Downloader processes media locally and does not operate download servers.
 
-La aplicación:
+## Data handled by the application
 
-- no crea cuentas;
-- no muestra publicidad;
-- no incluye telemetría ni analítica;
-- no vende ni transmite datos personales a BeeTales;
-- no guarda historial de enlaces;
-- no sube los archivos descargados a servicios de BeeTales.
+| Data | Behavior |
+| --- | --- |
+| Public media URL | Kept in memory for the active session and sent directly to the selected platform |
+| Downloaded media | Written directly to the destination selected by the user |
+| Destination preference | Stored in the local Windows user profile |
+| Appearance preference | Stored in the local Windows user profile |
+| Queue and history | Kept in memory and discarded when the application closes |
 
-Solo guarda en el perfil local de Windows la carpeta de destino elegida y la preferencia de apariencia. Las plataformas enlazadas reciben las solicitudes realizadas directamente por el usuario y aplican sus propias políticas de privacidad.
+The application does not create BeeTales accounts, display advertising, include telemetry or analytics, sell personal data, upload downloaded files to BeeTales, store URL history, or synchronize information between devices.
+
+Supported platforms receive requests directly from the user's computer and apply their own privacy policies. BeeTales does not act as a proxy or intermediary for those requests.
+
+Local settings can be removed by deleting `%APPDATA%\BeeTales Video Downloader\settings.json` after closing the application.

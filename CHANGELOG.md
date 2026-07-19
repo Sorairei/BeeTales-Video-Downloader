@@ -8,7 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Planned
 
-- Final accessibility, security, and documentation audit.
+- Additional platform compatibility maintenance as public sites evolve.
+
+### Added
+
+- Documented keyboard shortcuts for URL focus, analysis, queueing, destination selection, and help.
+- Automated WCAG AA contrast validation for normal-size text in light and dark themes.
+
+### Changed
+
+- Expanded and standardized privacy, security, acceptable-use, and contribution documentation in English.
+- Improved success and error colors with theme-specific accessible variants.
 
 ## [0.3.0] - 2026-07-19
 

@@ -5,6 +5,7 @@ import unittest
 import json
 from pathlib import Path
 
+from accessibility import KEYBOARD_SHORTCUTS, keyboard_help_text
 from downloader import (
     MAX_DURATION_SECONDS,
     DownloadRequest,
@@ -17,6 +18,7 @@ from downloader import (
     validate_url,
 )
 from settings import Settings, load_settings, save_settings
+from theme import audited_contrast_pairs, contrast_ratio
 from queue_manager import DuplicateJobError, QueueManager, request_identity
 from release_metadata import (
     APP_VERSION,
@@ -254,6 +256,26 @@ class ReleaseMetadataTests(unittest.TestCase):
             self.assertEqual(actual, expected)
             self.assertEqual(actual["sha256"], sha256_file(archive))
             self.assertIn(archive.name, checksums_path.read_text(encoding="ascii"))
+
+
+class AccessibilityTests(unittest.TestCase):
+    def test_all_text_color_pairs_meet_wcag_aa(self) -> None:
+        for name, ratio in audited_contrast_pairs().items():
+            with self.subTest(pair=name):
+                self.assertGreaterEqual(ratio, 4.5)
+
+    def test_contrast_rejects_invalid_color_notation(self) -> None:
+        with self.assertRaises(ValueError):
+            contrast_ratio("green", "#000000")
+
+    def test_keyboard_shortcuts_are_unique_and_documented(self) -> None:
+        keys = [shortcut.keys for shortcut in KEYBOARD_SHORTCUTS]
+        actions = [shortcut.action for shortcut in KEYBOARD_SHORTCUTS]
+        help_text = keyboard_help_text()
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertEqual(len(actions), len(set(actions)))
+        for shortcut in KEYBOARD_SHORTCUTS:
+            self.assertIn(shortcut.keys, help_text)
 
 
 if __name__ == "__main__":

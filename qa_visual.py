@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import json
+import os
 import subprocess
 import sys
 import time
@@ -85,7 +87,12 @@ def find_windows(executable_name: str) -> list[tuple[int, int, Rect]]:
     return matches
 
 
-def capture(executable: Path, output: Path, timeout: float = 30.0) -> dict[str, object]:
+def capture(
+    executable: Path,
+    output: Path,
+    timeout: float = 30.0,
+    appearance: str | None = None,
+) -> dict[str, object]:
     if sys.platform != "win32":
         raise RuntimeError("Esta prueba visual solo funciona en Windows.")
     if not executable.is_file():
@@ -93,7 +100,23 @@ def capture(executable: Path, output: Path, timeout: float = 30.0) -> dict[str, 
 
     ctypes.windll.user32.SetProcessDPIAware()
     existing_handles = {item[0] for item in find_windows(executable.name)}
-    process = subprocess.Popen([str(executable)])
+    environment = None
+    if appearance:
+        profile = output.parent / f"profile-{appearance.casefold()}"
+        settings_directory = profile / "BeeTales Video Downloader"
+        settings_directory.mkdir(parents=True, exist_ok=True)
+        (settings_directory / "settings.json").write_text(
+            json.dumps(
+                {"destination": str(output.parent / "downloads"), "appearance": appearance},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        environment = os.environ.copy()
+        environment["APPDATA"] = str(profile.resolve())
+
+    process = subprocess.Popen([str(executable)], env=environment)
     window: tuple[int, int, Rect] | None = None
     deadline = time.monotonic() + timeout
     try:
@@ -122,6 +145,7 @@ def capture(executable: Path, output: Path, timeout: float = 30.0) -> dict[str, 
             "height": image.height,
             "loader_process_id": process.pid,
             "window_process_id": window_process_id,
+            "appearance": appearance or "Sistema",
         }
     finally:
         if window:
@@ -145,8 +169,9 @@ def main() -> None:
         type=Path,
         default=Path("build/qa/beetales-window.png"),
     )
+    parser.add_argument("--appearance", choices=("Sistema", "Claro", "Oscuro"))
     arguments = parser.parse_args()
-    print(capture(arguments.executable, arguments.output))
+    print(capture(arguments.executable, arguments.output, appearance=arguments.appearance))
 
 
 if __name__ == "__main__":
