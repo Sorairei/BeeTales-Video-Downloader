@@ -31,10 +31,14 @@ La aplicación acepta enlaces públicos de YouTube, TikTok, Instagram y X, consu
 
 - Video MP4 con video y audio unidos mediante FFmpeg.
 - Audio MP3 a 128, 192, 256 o 320 kbps.
+- Calidades detectadas desde los formatos reales de cada publicación.
+- Preferencia por H.264 y AAC para producir MP4 ampliamente compatibles, con alternativas automáticas.
 - Descargas individuales con progreso, velocidad, tiempo restante y cancelación.
 - Una cola local que no conserva historial de enlaces después de cerrar la aplicación.
 
 Spotify, playlists, contenido privado, cuentas, cookies y DRM están fuera del alcance.
+
+BeeTales valida que cada URL apunte a una publicación individual y muestra mensajes diferenciados para contenido privado, eliminado, sin video, protegido por DRM, restringido por región o limitado temporalmente por la plataforma.
 
 ## Privacidad y funcionamiento
 

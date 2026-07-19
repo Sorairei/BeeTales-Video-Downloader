@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 
 SUPPORTED_HEIGHTS = (360, 480, 720, 1080, 1440, 2160)
@@ -111,11 +112,42 @@ def _host_matches(hostname: str, allowed: str) -> bool:
     return hostname == allowed or hostname.endswith(f".{allowed}")
 
 
+def _is_individual_media_url(platform: Platform, hostname: str, path: str, query: str) -> bool:
+    segments = [segment for segment in path.split("/") if segment]
+    if platform.id == "youtube":
+        if _host_matches(hostname, "youtu.be"):
+            return bool(segments)
+        if len(segments) >= 2 and segments[0].lower() in {"shorts", "embed", "live"}:
+            return True
+        return path.rstrip("/").lower() == "/watch" and bool(parse_qs(query).get("v"))
+    if platform.id == "tiktok":
+        if hostname.startswith(("vm.", "vt.")):
+            return bool(segments)
+        return bool(
+            re.fullmatch(r"/@[^/]+/video/\d+", path.rstrip("/"), flags=re.IGNORECASE)
+            or (len(segments) >= 2 and segments[0].lower() == "t")
+        )
+    if platform.id == "instagram":
+        return len(segments) >= 2 and segments[0].lower() in {"p", "reel", "reels", "tv"}
+    if platform.id == "x":
+        return bool(
+            re.fullmatch(
+                r"/(?:[^/]+/status|i/web/status)/\d+(?:/video/\d+)?",
+                path.rstrip("/"),
+                re.IGNORECASE,
+            )
+            or re.fullmatch(r"/i/broadcasts/[A-Za-z0-9]+", path.rstrip("/"))
+        )
+    return False
+
+
 def validate_url(value: str) -> ValidatedUrl:
     if not isinstance(value, str) or not value.strip():
         raise ValidationError("Pega primero un enlace público.")
     if len(value) > MAX_URL_LENGTH:
         raise ValidationError("El enlace es demasiado largo.")
+    if any(ord(character) < 32 for character in value):
+        raise ValidationError("El enlace contiene caracteres no permitidos.")
 
     try:
         parts = urlsplit(value.strip())
@@ -139,8 +171,10 @@ def validate_url(value: str) -> ValidatedUrl:
     )
     if platform is None:
         raise ValidationError("Usa un enlace de YouTube, TikTok, Instagram o X.")
+    if not _is_individual_media_url(platform, hostname, parts.path or "/", parts.query):
+        raise ValidationError("El enlace debe apuntar a un video o publicación individual.")
 
-    normalized = urlunsplit(("https", parts.netloc, parts.path or "/", parts.query, ""))
+    normalized = urlunsplit(("https", hostname, parts.path or "/", parts.query, ""))
     return ValidatedUrl(normalized, platform)
 
 
@@ -212,7 +246,11 @@ def build_download_options(
 ) -> dict:
     if request.output_type not in ("video", "audio"):
         raise ValidationError("Selecciona Video MP4 o Audio MP3.")
-    quality = request.quality if request.quality in SUPPORTED_HEIGHTS else 1080
+    quality = (
+        request.quality
+        if isinstance(request.quality, int) and 144 <= request.quality <= 4320
+        else 1080
+    )
     bitrate = request.audio_bitrate if request.audio_bitrate in SUPPORTED_BITRATES else 192
 
     options = {
@@ -245,12 +283,18 @@ def build_download_options(
         options.update(
             {
                 "format": (
+                    f"bestvideo[height<=?{quality}][vcodec^=avc1][ext=mp4]"
+                    "+bestaudio[acodec^=mp4a][ext=m4a]/"
+                    f"best[height<=?{quality}][vcodec^=avc1][acodec^=mp4a][ext=mp4]/"
                     f"bestvideo*[height<=?{quality}][ext=mp4]+bestaudio[ext=m4a]/"
                     f"best[height<=?{quality}][ext=mp4]/"
                     f"bestvideo*[height<=?{quality}]+bestaudio/best[height<=?{quality}]"
                 ),
                 "merge_output_format": "mp4",
-                "postprocessors": [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}],
+                "postprocessors": [
+                    {"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"},
+                    {"key": "FFmpegMetadata", "add_metadata": True},
+                ],
             }
         )
     return options
@@ -272,6 +316,48 @@ def _safe_text(value: object, fallback: str = "") -> str:
     return "".join(character for character in value if character >= " ").strip()[:500]
 
 
+def safe_error_message(error: Exception, action: str = "descarga") -> str:
+    detail = str(error).lower()
+    if "drm" in detail:
+        return "El contenido está protegido con DRM y no puede procesarse."
+    if "ffmpeg" in detail or "ffprobe" in detail:
+        return "FFmpeg no pudo procesar este formato multimedia."
+    if any(
+        term in detail
+        for term in (
+            "private",
+            "login required",
+            "sign in",
+            "authentication",
+            "http error 401",
+            "members-only",
+            "age-restricted",
+            "registered users",
+        )
+    ):
+        return "El contenido es privado o requiere iniciar sesión; BeeTales no usa cuentas ni cookies."
+    if any(term in detail for term in ("no video", "does not contain a video", "without video")):
+        return "La publicación no contiene un video público descargable."
+    if any(
+        term in detail
+        for term in ("unavailable", "deleted", "not found", "removed", "copyright")
+    ):
+        return "El contenido no está disponible, fue eliminado o el enlace dejó de ser válido."
+    if any(term in detail for term in ("geo-restricted", "georestricted", "country", "region")):
+        return "El contenido no está disponible en tu región."
+    if any(term in detail for term in ("http error 429", "too many requests", "rate limit")):
+        return "La plataforma limitó temporalmente las solicitudes. Espera unos minutos e inténtalo de nuevo."
+    if any(term in detail for term in ("http error 403", "forbidden")):
+        return "La plataforma rechazó el acceso público a este contenido."
+    if any(term in detail for term in ("unsupported url", "no suitable extractor")):
+        return "La plataforma no reconoce este tipo de enlace como contenido descargable."
+    if any(term in detail for term in ("timed out", "timeout", "network", "connection", "dns")):
+        return "No fue posible conectar con la plataforma. Revisa tu conexión e inténtalo nuevamente."
+    if action == "análisis":
+        return "No fue posible analizar el enlace. La plataforma puede haber cambiado o limitado el acceso."
+    return "La descarga no pudo completarse. La plataforma puede haber cambiado o limitado el acceso."
+
+
 def _normalize_info(info: dict, validated: ValidatedUrl) -> MediaInfo:
     if info.get("_type") in {"playlist", "multi_video"} and info.get("entries"):
         info = next((entry for entry in info["entries"] if entry), info)
@@ -288,12 +374,18 @@ def _normalize_info(info: dict, validated: ValidatedUrl) -> MediaInfo:
                 for item in info.get("formats", [])
                 if isinstance(item, dict)
                 and isinstance(item.get("height"), (int, float))
-                and int(item["height"]) in SUPPORTED_HEIGHTS
+                and 144 <= int(item["height"]) <= 4320
             }
         )
     )
     if not qualities:
-        qualities = (360, 480, 720, 1080)
+        top_level_height = info.get("height")
+        qualities = (
+            (int(top_level_height),)
+            if isinstance(top_level_height, (int, float))
+            and 144 <= int(top_level_height) <= 4320
+            else (720,)
+        )
     preferred = [height for height in qualities if height <= 1080]
     default_quality = preferred[-1] if preferred else qualities[-1]
     thumbnail = info.get("thumbnail")
@@ -322,9 +414,7 @@ def analyze_media(url: str, paths: ToolPaths | None = None) -> MediaInfo:
     except DownloaderError:
         raise
     except Exception as exc:
-        raise DownloaderError(
-            "No fue posible analizar el enlace. La plataforma puede haber cambiado o limitado el acceso."
-        ) from exc
+        raise DownloaderError(safe_error_message(exc, "análisis")) from exc
     if not isinstance(info, dict):
         raise DownloaderError("La plataforma no devolvió información utilizable.")
     return _normalize_info(info, validated)
@@ -400,9 +490,9 @@ def download_media(
         notify(ProgressEvent("finished", 100.0, message="Archivo listo."))
     except DownloadCancelled:
         raise
+    except DownloaderError:
+        raise
     except Exception as exc:
         if cancellation.is_set():
             raise DownloadCancelled("Descarga cancelada.") from exc
-        raise DownloaderError(
-            "La descarga no pudo completarse. La plataforma puede haber cambiado o limitado el acceso."
-        ) from exc
+        raise DownloaderError(safe_error_message(exc, "descarga")) from exc

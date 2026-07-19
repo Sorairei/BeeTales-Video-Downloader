@@ -5,11 +5,14 @@ import unittest
 from pathlib import Path
 
 from downloader import (
+    MAX_DURATION_SECONDS,
     DownloadRequest,
     ToolPaths,
     ValidationError,
+    _normalize_info,
     build_analysis_options,
     build_download_options,
+    safe_error_message,
     validate_url,
 )
 from settings import Settings, load_settings, save_settings
@@ -23,6 +26,9 @@ class UrlValidationTests(unittest.TestCase):
             "https://vm.tiktok.com/example": "tiktok",
             "https://www.instagram.com/reel/example/": "instagram",
             "https://x.com/user/status/123": "x",
+            "https://x.com/user/status/123/video/1": "x",
+            "https://x.com/i/web/status/123": "x",
+            "https://x.com/i/broadcasts/1PKqrEDEPNLGb": "x",
             "https://mobile.twitter.com/user/status/123": "x",
         }
         for url, platform in cases.items():
@@ -36,10 +42,20 @@ class UrlValidationTests(unittest.TestCase):
             "https://spotify.com/track/x",
             "https://user:pass@x.com/status/1",
             "https://127.0.0.1/video",
+            "https://youtube.com/",
+            "https://youtube.com/playlist?list=example",
+            "https://instagram.com/example-profile/",
+            "https://x.com/example-user",
+            "https://tiktok.com/@example-user",
+            "https://youtu.be/video\nmalformed",
         )
         for url in cases:
             with self.subTest(url=url), self.assertRaises(ValidationError):
                 validate_url(url)
+
+    def test_normalizes_fragment_and_default_port(self) -> None:
+        result = validate_url("https://WWW.YouTube.com:443/watch?v=example#comments")
+        self.assertEqual(result.url, "https://www.youtube.com/watch?v=example")
 
 
 class OptionTests(unittest.TestCase):
@@ -61,7 +77,15 @@ class OptionTests(unittest.TestCase):
         request = DownloadRequest("https://youtu.be/x", "video", Path("C:/Downloads"), quality=720)
         options = build_download_options(request, self.tools)
         self.assertIn("height<=?720", options["format"])
+        self.assertIn("vcodec^=avc1", options["format"])
+        self.assertIn("acodec^=mp4a", options["format"])
         self.assertEqual(options["merge_output_format"], "mp4")
+        self.assertEqual(options["postprocessors"][1]["key"], "FFmpegMetadata")
+
+    def test_nonstandard_platform_height_is_preserved(self) -> None:
+        request = DownloadRequest("https://youtu.be/x", "video", Path("C:/Downloads"), quality=640)
+        options = build_download_options(request, self.tools)
+        self.assertIn("height<=?640", options["format"])
 
     def test_audio_uses_mp3_and_selected_bitrate(self) -> None:
         request = DownloadRequest(
@@ -78,6 +102,52 @@ class OptionTests(unittest.TestCase):
         )
         options = build_download_options(request, self.tools)
         self.assertEqual(options["postprocessors"][0]["preferredquality"], "192")
+
+
+class MediaInfoTests(unittest.TestCase):
+    def test_real_nonstandard_qualities_are_reported(self) -> None:
+        validated = validate_url("https://www.instagram.com/reel/example/")
+        media = _normalize_info(
+            {
+                "id": "example",
+                "title": "Vertical video",
+                "formats": [{"height": 360}, {"height": 640}, {"height": 1280}],
+            },
+            validated,
+        )
+        self.assertEqual(media.qualities, (360, 640, 1280))
+        self.assertEqual(media.default_quality, 640)
+
+    def test_top_level_height_is_used_without_formats(self) -> None:
+        validated = validate_url("https://x.com/user/status/123")
+        media = _normalize_info({"id": "123", "height": 576}, validated)
+        self.assertEqual(media.qualities, (576,))
+        self.assertEqual(media.default_quality, 576)
+
+    def test_duration_limit_is_enforced(self) -> None:
+        validated = validate_url("https://youtu.be/example")
+        with self.assertRaises(ValidationError):
+            _normalize_info({"id": "example", "duration": MAX_DURATION_SECONDS + 1}, validated)
+
+
+class SafeErrorTests(unittest.TestCase):
+    def test_error_categories_are_safe_and_actionable(self) -> None:
+        cases = {
+            "This video is private; sign in": "privado",
+            "This content is protected by DRM": "DRM",
+            "Video unavailable": "disponible",
+            "No video could be found in this tweet": "no contiene",
+            "Connection timed out": "conectar",
+            "Unsupported URL": "enlace",
+            "ffmpeg exited with code 1": "FFmpeg",
+            "HTTP Error 429: Too Many Requests": "temporalmente",
+            "This video is age-restricted": "sesión",
+        }
+        for detail, expected in cases.items():
+            with self.subTest(detail=detail):
+                message = safe_error_message(RuntimeError(detail))
+                self.assertIn(expected, message)
+                self.assertNotIn(detail, message)
 
 
 class SettingsTests(unittest.TestCase):
