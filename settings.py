@@ -1,4 +1,4 @@
-"""Preferencias locales sin historial ni telemetría."""
+"""Local user preferences — no history, no telemetry."""
 
 from __future__ import annotations
 

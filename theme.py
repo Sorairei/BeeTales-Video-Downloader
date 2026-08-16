@@ -1,4 +1,4 @@
-"""Identidad visual centralizada de BeeTales Video Downloader."""
+"""Centralized visual identity and design tokens for BeeTales Video Downloader."""
 
 from __future__ import annotations
 

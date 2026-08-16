@@ -1,4 +1,4 @@
-"""Núcleo local y comprobable de BeeTales Video Downloader."""
+"""Local, testable core engine for BeeTales Video Downloader."""
 
 from __future__ import annotations
 
@@ -24,22 +24,32 @@ MAX_URL_LENGTH = 2048
 MAX_DURATION_SECONDS = 2 * 60 * 60
 MAX_FILESIZE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_THUMBNAIL_BYTES = 5 * 1024 * 1024
+# Maximum time allowed for an FFmpeg transcoding operation.
+# Prevents indefinite blocking on very long content or a stalled FFmpeg process.
+FFMPEG_TRANSCODE_TIMEOUT = 4 * 60 * 60  # 4 hours maximum
+
+# Characters forbidden in URLs: C0 controls, zero-width codepoints, BOM.
+_URL_FORBIDDEN_CHARS: frozenset[str] = frozenset(
+    chr(c) for c in range(32)
+) | frozenset(
+    chr(c) for c in range(0x200B, 0x200F + 1)
+) | {chr(0xFEFF)}
 
 
 class DownloaderError(RuntimeError):
-    """Error seguro que puede mostrarse en la interfaz."""
+    """Safe error that can be shown directly in the user interface."""
 
 
 class ValidationError(DownloaderError):
-    """La solicitud del usuario no cumple los límites del programa."""
+    """The user request does not meet the program's constraints."""
 
 
 class DependencyError(DownloaderError):
-    """Falta una herramienta local requerida."""
+    """A required local tool is missing."""
 
 
 class DownloadCancelled(DownloaderError):
-    """El usuario canceló una descarga activa."""
+    """The user cancelled an active download."""
 
 
 @dataclass(frozen=True)
@@ -120,7 +130,7 @@ ProgressCallback = Callable[[ProgressEvent], None]
 
 
 def application_root() -> Path:
-    """Raíz del código o de los recursos extraídos por PyInstaller."""
+    """Root directory of the source code or the PyInstaller-extracted bundle."""
 
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
@@ -163,7 +173,7 @@ def validate_url(value: str) -> ValidatedUrl:
         raise ValidationError("Pega primero un enlace público.")
     if len(value) > MAX_URL_LENGTH:
         raise ValidationError("El enlace es demasiado largo.")
-    if any(ord(character) < 32 for character in value):
+    if any(ch in _URL_FORBIDDEN_CHARS for ch in value):
         raise ValidationError("El enlace contiene caracteres no permitidos.")
 
     try:
@@ -236,7 +246,7 @@ def fetch_thumbnail(value: str | None) -> bytes | None:
     if not value:
         return None
     _validate_thumbnail_url(value)
-    request = Request(value, headers={"User-Agent": "BeeTales-Video-Downloader/0.3"})
+    request = Request(value, headers={"User-Agent": _user_agent()})
     try:
         with build_opener(_PublicThumbnailRedirectHandler()).open(request, timeout=15) as response:
             _validate_thumbnail_url(response.geturl())
@@ -319,9 +329,16 @@ def build_analysis_options(paths: ToolPaths) -> dict:
 def build_download_options(
     request: DownloadRequest,
     paths: ToolPaths,
+    platform_id: str | None = None,
     progress_hooks: list[Callable] | None = None,
     postprocessor_hooks: list[Callable] | None = None,
 ) -> dict:
+    """Build yt-dlp options for a download request.
+
+    Args:
+        platform_id: Pre-validated platform ID to avoid a second DNS
+            resolution. If None, the URL is validated again internally.
+    """
     if request.output_type not in ("video", "audio"):
         raise ValidationError("Selecciona Video MP4 o Audio MP3.")
     quality = (
@@ -364,23 +381,31 @@ def build_download_options(
             }
         )
     else:
-        platform_id = validate_url(request.url).platform.id
+        resolved_platform_id = platform_id or validate_url(request.url).platform.id
         instagram_combined = (
             f"best[height<=?{quality}][ext=mp4]/"
-            if platform_id == "instagram" and quality <= 1280
+            if resolved_platform_id == "instagram" and quality <= 1280
             else ""
+        )
+        # yt-dlp format selection priority chain:
+        # 1. Native H.264+AAC in MP4 — maximum compatibility, no transcoding needed.
+        # 2. Best H.264 in MP4 with any compatible audio.
+        # 3. Instagram: low-resolution combined MP4 (avoids VP9 inside MP4).
+        # 4. Best MP4 video + best M4A audio — requires FFmpeg merge.
+        # 5. Any available MP4 as a last-resort fallback.
+        # 6. Best video + audio of any format — may require transcoding.
+        format_priority = (
+            f"bestvideo[height<=?{quality}][vcodec^=avc1][ext=mp4]"
+            f"+bestaudio[acodec^=mp4a][ext=m4a]"
+            f"/best[height<=?{quality}][vcodec^=avc1][acodec^=mp4a][ext=mp4]"
+            f"/{instagram_combined}"
+            f"bestvideo*[height<=?{quality}][ext=mp4]+bestaudio[ext=m4a]"
+            f"/best[height<=?{quality}][ext=mp4]"
+            f"/bestvideo*[height<=?{quality}]+bestaudio/best[height<=?{quality}]"
         )
         options.update(
             {
-                "format": (
-                    f"bestvideo[height<=?{quality}][vcodec^=avc1][ext=mp4]"
-                    "+bestaudio[acodec^=mp4a][ext=m4a]/"
-                    f"best[height<=?{quality}][vcodec^=avc1][acodec^=mp4a][ext=mp4]/"
-                    f"{instagram_combined}"
-                    f"bestvideo*[height<=?{quality}][ext=mp4]+bestaudio[ext=m4a]/"
-                    f"best[height<=?{quality}][ext=mp4]/"
-                    f"bestvideo*[height<=?{quality}]+bestaudio/best[height<=?{quality}]"
-                ),
+                "format": format_priority,
                 "merge_output_format": "mp4",
                 "postprocessors": [
                     {"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"},
@@ -390,6 +415,14 @@ def build_download_options(
         )
     return options
 
+
+def _user_agent() -> str:
+    """Dynamic User-Agent string that reflects the current bundle version."""
+    try:
+        from release_metadata import APP_VERSION
+        return f"BeeTales-Video-Downloader/{APP_VERSION}"
+    except Exception:
+        return "BeeTales-Video-Downloader/0"
 
 def probe_media_file(path: Path, paths: ToolPaths) -> FileMediaInfo:
     if not paths.ffprobe:
@@ -505,7 +538,7 @@ def ensure_compatible_mp4(
             ],
             capture_output=True,
             text=True,
-            timeout=None,
+            timeout=FFMPEG_TRANSCODE_TIMEOUT,
             check=False,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
@@ -513,13 +546,16 @@ def ensure_compatible_mp4(
             raise DownloaderError("FFmpeg no pudo crear un MP4 compatible con este contenido.")
         converted = probe_media_file(temporary, paths)
         if converted.video_codec != "h264" or converted.pixel_format != "yuv420p":
-            raise DownloaderError("La validación del MP4 compatible no fue satisfactoria.")
+            raise DownloaderError("La validacion del MP4 compatible no fue satisfactoria.")
         if converted.audio_codec not in {"", "aac"}:
             raise DownloaderError("La pista de audio final no es compatible con MP4.")
+        # Move the file BEFORE the except block can delete the temporary.
+        # If os.replace fails, the except branch cleans up; the original file remains intact.
         os.replace(temporary, path)
         return True
-    finally:
+    except Exception:
         temporary.unlink(missing_ok=True)
+        raise
 
 
 def _load_yt_dlp():

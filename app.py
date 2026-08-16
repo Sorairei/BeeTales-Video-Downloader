@@ -39,6 +39,7 @@ from downloader import (
     download_media,
     fetch_thumbnail,
 )
+from formatters import format_duration, format_speed
 from localization import (
     LANGUAGE_NAMES,
     appearance_labels,
@@ -46,7 +47,7 @@ from localization import (
     localize_engine_error,
     tr,
 )
-from queue_manager import DuplicateJobError, QueueJob, QueueManager
+from queue_manager import DuplicateJobError, QueueCounts, QueueJob, QueueManager
 from release_metadata import APP_VERSION
 from settings import load_settings, save_settings
 from theme import (
@@ -85,31 +86,6 @@ CARD_RADIUS = 18
 
 def resource_path(relative: str) -> Path:
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / relative
-
-
-def format_duration(seconds: int | None, language: str) -> str:
-    if seconds is None:
-        return tr("duration_unknown", language)
-    hours, remainder = divmod(seconds, 3600)
-    minutes, remaining_seconds = divmod(remainder, 60)
-    return (
-        f"{hours}:{minutes:02d}:{remaining_seconds:02d}"
-        if hours
-        else f"{minutes}:{remaining_seconds:02d}"
-    )
-
-
-def format_speed(value: float | None) -> str:
-    if not value:
-        return ""
-    units = ("B/s", "KB/s", "MB/s", "GB/s")
-    amount = float(value)
-    unit = units[0]
-    for unit in units:
-        if amount < 1024 or unit == units[-1]:
-            break
-        amount /= 1024
-    return f"{amount:.1f} {unit}"
 
 
 def open_directory(directory: Path, language: str) -> None:
@@ -241,6 +217,11 @@ class QueueCard(ctk.CTkFrame):
     def update_progress(self, event: ProgressEvent) -> None:
         self.last_progress = event
         self.progress.set(event.percent / 100)
+        # Change progress bar color based on download state for immediate visual feedback
+        if event.status == "processing":
+            self.progress.configure(progress_color=ORANGE)
+        else:
+            self.progress.configure(progress_color=PRIMARY)
         if event.status == "starting":
             details = tr("preparing", self.language)
         elif event.status == "processing":
@@ -263,6 +244,7 @@ class QueueCard(ctk.CTkFrame):
     def finish(self, destination: Path) -> None:
         self.destination = destination
         self.progress.set(1)
+        self.progress.configure(progress_color=PRIMARY)
         self.retranslate(self.language)
 
     def fail(self, message: str, cancelled: bool = False) -> None:
@@ -270,10 +252,25 @@ class QueueCard(ctk.CTkFrame):
         if cancelled:
             self.job.state = "cancelled"
         self.retranslate(self.language)
+        # If there is a real error message, show a Details button so the user can inspect it
+        if message and not cancelled:
+            self.progress.configure(progress_color=DANGER)
+            self.action.configure(
+                text="Details",
+                state="normal",
+                fg_color="transparent",
+                border_width=1,
+                border_color=DANGER,
+                text_color=DANGER,
+                hover_color=BORDER,
+                command=lambda m=message: messagebox.showerror(
+                    "Error detail", m
+                ),
+            )
 
 
 class SplashScreen(tk.Toplevel):
-    """Ventana de carga que se muestra mientras la aplicacion se inicializa."""
+    """Loading window displayed while the application initialises."""
 
     _STEPS = [
         (0.20, "Loading tools..."),
@@ -296,7 +293,7 @@ class SplashScreen(tk.Toplevel):
         y = (screen_h - height) // 2
         self.geometry(f"{width}x{height}+{x}+{y}")
 
-        # Borde sutil
+        # Subtle border
         outer = tk.Frame(self, bg="#1A3025", padx=1, pady=1)
         outer.pack(fill="both", expand=True)
         inner = tk.Frame(outer, bg="#060E0A")
@@ -324,7 +321,7 @@ class SplashScreen(tk.Toplevel):
             font=("Segoe UI", 11),
         ).pack()
 
-        # Contenedor de la barra
+        # Progress bar container
         bar_frame = tk.Frame(inner, bg="#060E0A")
         bar_frame.pack(fill="x", padx=48, pady=(28, 6))
 
@@ -334,7 +331,7 @@ class SplashScreen(tk.Toplevel):
         self._fill = tk.Frame(track, bg="#5AAD1E", height=4)
         self._fill.place(x=0, y=0, relheight=1, relwidth=0)
 
-        # Texto de estado
+        # Status text label
         self._status_var = tk.StringVar(value="Starting...")
         tk.Label(
             inner, textvariable=self._status_var,
@@ -356,7 +353,7 @@ class SplashScreen(tk.Toplevel):
         if self._step_index < len(self._STEPS):
             self.after(self._STEP_MS, self._advance)
         else:
-            # Esperar a que las herramientas terminen de detectarse (max 2s)
+            # Wait for tool detection to finish (max 2 s)
             self.after(200, self._wait_for_tools)
 
     def _wait_for_tools(self) -> None:
@@ -366,7 +363,7 @@ class SplashScreen(tk.Toplevel):
             self.after(80, self._wait_for_tools)
 
     def signal_ready(self) -> None:
-        """Llamar desde el hilo de deteccion de herramientas cuando termina."""
+        """Called from the tool-detection thread when detection is complete."""
         self._done_event.set()
 
 
@@ -654,14 +651,21 @@ class BeeTalesDownloaderApp(ctk.CTk):
         )
         self.queue_frame.grid(row=2, column=0, padx=12, pady=(0, 12), sticky="nsew")
         self.queue_frame.grid_columnconfigure(0, weight=1)
+        # Empty state: mascot image + descriptive text
+        self._empty_queue_container = ctk.CTkFrame(self.queue_frame, fg_color="transparent")
+        self._empty_queue_container.grid(row=0, column=0, padx=18, pady=28)
+        self._mascot_image = self._ctk_image("assets/frog-mascot.png", (52, 52))
+        ctk.CTkLabel(
+            self._empty_queue_container, image=self._mascot_image, text=""
+        ).pack()
         self.empty_queue = ctk.CTkLabel(
-            self.queue_frame,
+            self._empty_queue_container,
             text="",
             text_color=TEXT_MUTED,
             justify="center",
-            wraplength=280,
+            wraplength=240,
         )
-        self.empty_queue.grid(row=0, column=0, padx=18, pady=34)
+        self.empty_queue.pack(pady=(8, 0))
 
         status_bar = ctk.CTkFrame(
             workspace, fg_color=SURFACE, border_width=1, border_color=BORDER, corner_radius=10
@@ -762,7 +766,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
             self.media_card, text="", text_color=TEXT_MUTED, anchor="w"
         )
         self.media_meta.grid(row=2, column=1, padx=(0, 14), pady=(2, 15), sticky="w")
-        # Oculta hasta que haya media analizada
+        # Hidden until a link has been successfully analysed
         self.media_card.grid_remove()
 
     def _build_output_card(self) -> None:
@@ -848,7 +852,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
             command=self._enqueue_download,
         )
         self.download_button.grid(row=5, column=0, columnspan=2, padx=16, pady=(4, 16), sticky="ew")
-        # Oculta hasta que haya media analizada
+        # Hidden until a link has been successfully analysed
         card.grid_remove()
 
     def _build_local_flow_card(self) -> None:
@@ -1151,7 +1155,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         except DuplicateJobError:
             self._set_status(tr("duplicate", self.language), error=True)
             return
-        self.empty_queue.grid_remove()
+        self._empty_queue_container.grid_remove()
         card = QueueCard(
             self.queue_frame,
             job,
@@ -1209,7 +1213,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
             if card:
                 card.destroy()
         if not self.queue_cards:
-            self.empty_queue.grid(row=0, column=0, padx=18, pady=34)
+            self._empty_queue_container.grid(row=0, column=0, padx=18, pady=28)
         self._refresh_queue_header()
         if identifiers:
             self._set_status(
@@ -1217,22 +1221,25 @@ class BeeTalesDownloaderApp(ctk.CTk):
             )
 
     def _refresh_queue_header(self) -> None:
-        total = self.queue_manager.total_count
-        active = self.queue_manager.active_count
-        finished = self.queue_manager.finished_count
-        if not total:
+        # Single lock acquisition to read all three counters atomically
+        c: QueueCounts = self.queue_manager.counts()
+        if not c.total:
             summary = tr("queue_empty_count", self.language)
-        elif active:
-            summary = tr("queue_active_count", self.language, active=active, finished=finished)
+        elif c.active:
+            summary = tr("queue_active_count", self.language, active=c.active, finished=c.finished)
         else:
-            summary = tr("queue_finished_count", self.language, finished=finished)
+            summary = tr("queue_finished_count", self.language, finished=c.finished)
         self.queue_summary_label.configure(text=summary)
-        self.clear_queue_button.configure(state="normal" if finished else "disabled")
+        self.clear_queue_button.configure(state="normal" if c.finished else "disabled")
+
+    _MAX_EVENTS_PER_TICK = 20
 
     def _process_events(self) -> None:
+        processed = 0
         try:
-            while True:
+            while processed < self._MAX_EVENTS_PER_TICK:
                 event = self.events.get_nowait()
+                processed += 1
                 kind = event[0]
                 if kind.startswith("analysis_"):
                     if event[1] != self.analysis_generation:
@@ -1403,7 +1410,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
 def main() -> None:
     ctk.set_default_color_theme("blue")
 
-    # Raiz oculta necesaria para que Toplevel funcione antes que CTk
+    # Hidden root required so that Toplevel works before CTk is initialised
     _root = tk.Tk()
     _root.withdraw()
 
@@ -1411,7 +1418,7 @@ def main() -> None:
     splash = SplashScreen(_root, logo_path)
     splash.update()
 
-    # Detectar herramientas en un hilo paralelo mientras el splash se muestra
+    # Detect tools in a background thread while the splash screen is visible
     _tools_result: list[Any] = []
 
     def _detect() -> None:
@@ -1420,7 +1427,7 @@ def main() -> None:
 
     threading.Thread(target=_detect, daemon=True).start()
 
-    # Esperar activamente a que el splash termine su animacion y las herramientas carguen
+    # Actively wait until the splash animation finishes and tools have been detected
     while splash.winfo_exists():
         try:
             _root.update()
@@ -1430,7 +1437,7 @@ def main() -> None:
     _root.destroy()
 
     app = BeeTalesDownloaderApp()
-    # Asignar las herramientas ya detectadas
+    # Assign the already-detected tools before building the main window
     if _tools_result:
         app.tools = _tools_result[0]
     else:

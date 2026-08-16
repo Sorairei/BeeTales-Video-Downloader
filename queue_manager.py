@@ -1,4 +1,4 @@
-"""Estado comprobable de la cola local de descargas."""
+"""Testable local download queue state management."""
 
 from __future__ import annotations
 
@@ -15,11 +15,19 @@ FINAL_STATES = frozenset({"completed", "cancelled", "failed"})
 
 
 class DuplicateJobError(ValueError):
-    """La misma solicitud ya está activa en la cola."""
+    """The same request is already active in the queue."""
+
+
+@dataclass(frozen=True)
+class QueueCounts:
+    """Atomic snapshot of the queue counters."""
+    total: int
+    active: int
+    finished: int
 
 
 def request_identity(request: DownloadRequest) -> tuple[str, str, str, int]:
-    """Identidad estable sin conservar historial fuera del proceso."""
+    """Stable identity key without persisting history outside the process."""
 
     destination = os.path.normcase(os.path.abspath(request.destination))
     selected_quality = request.audio_bitrate if request.output_type == "audio" else request.quality
@@ -36,7 +44,7 @@ class QueueJob:
 
 
 class QueueManager:
-    """Coordina transiciones y duplicados sin depender de la interfaz."""
+    """Coordinates state transitions and duplicate detection without depending on the UI."""
 
     def __init__(self) -> None:
         self._jobs: dict[int, QueueJob] = {}
@@ -92,20 +100,28 @@ class QueueManager:
                 job.state = "cancelling"
             return len(jobs)
 
+    def counts(self) -> QueueCounts:
+        """Return total, active, and finished counts in a single lock acquisition."""
+        with self._lock:
+            jobs = list(self._jobs.values())
+        finished = sum(j.state in FINAL_STATES for j in jobs)
+        return QueueCounts(
+            total=len(jobs),
+            active=len(jobs) - finished,
+            finished=finished,
+        )
+
     @property
     def active_count(self) -> int:
-        with self._lock:
-            return sum(job.state not in FINAL_STATES for job in self._jobs.values())
+        return self.counts().active
 
     @property
     def finished_count(self) -> int:
-        with self._lock:
-            return sum(job.state in FINAL_STATES for job in self._jobs.values())
+        return self.counts().finished
 
     @property
     def total_count(self) -> int:
-        with self._lock:
-            return len(self._jobs)
+        return self.counts().total
 
     def remove_finished(self) -> tuple[int, ...]:
         with self._lock:
