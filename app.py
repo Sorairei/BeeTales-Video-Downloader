@@ -77,6 +77,7 @@ from theme import (
     SURFACE_ELEVATED,
     TEXT,
     TEXT_MUTED,
+    resolved,
 )
 
 
