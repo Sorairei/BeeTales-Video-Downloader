@@ -524,6 +524,17 @@ class BeeTalesDownloaderApp(ctk.CTk):
         workspace.grid_columnconfigure(0, weight=1)
         workspace.grid_rowconfigure(1, weight=1)
 
+        # High-tech background grid and audio waves
+        self.bg_canvas = tk.Canvas(
+            workspace,
+            bg=resolved(APP_BACKGROUND, self.preferences.appearance),
+            bd=0,
+            highlightthickness=0
+        )
+        self.bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
+        self.bg_canvas.bind("<Configure>", self._draw_background)
+
+
         header = ctk.CTkFrame(workspace, fg_color="transparent")
         header.grid(row=0, column=0, padx=28, pady=(22, 14), sticky="ew")
         header.grid_columnconfigure(0, weight=1)
@@ -1318,7 +1329,16 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.status_label.configure(text=message, text_color=color)
 
     def _apply_appearance(self, value: str) -> None:
-        ctk.set_appearance_mode({"system": "System", "light": "Light", "dark": "Dark"}.get(value, "System"))
+        mode = {"system": "System", "light": "Light", "dark": "Dark"}.get(value, "System")
+        ctk.set_appearance_mode(mode)
+        if hasattr(self, "bg_canvas"):
+            self.after(50, self._update_canvas_theme)
+
+    def _update_canvas_theme(self) -> None:
+        resolved_mode = ctk.get_appearance_mode()
+        bg_color = resolved(APP_BACKGROUND, resolved_mode)
+        self.bg_canvas.configure(bg=bg_color)
+        self._draw_background()
 
     def _change_appearance(self, label: str) -> None:
         labels = appearance_labels(self.language)
@@ -1405,6 +1425,45 @@ class BeeTalesDownloaderApp(ctk.CTk):
             self._set_status(tr("link_ready", self.language), success=True)
         else:
             self._set_status(tr("ready", self.language))
+
+    def _draw_background(self, event: Any = None) -> None:
+        """Render a subtle high-tech dot grid and audio waves on the workspace background canvas."""
+        canvas = self.bg_canvas
+        canvas.delete("all")
+
+        w = canvas.winfo_width()
+        h = canvas.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        resolved_mode = ctk.get_appearance_mode().lower()
+        is_dark = resolved_mode == "dark"
+        grid_color = "#151824" if is_dark else "#E5ECF6"
+        wave_color_1 = "#082A3A" if is_dark else "#E6FAF8"
+        wave_color_2 = "#260C38" if is_dark else "#F6E8FF"
+
+        # 1. Render tech dot grid
+        grid_spacing = 32
+        for x in range(0, w, grid_spacing):
+            for y in range(0, h, grid_spacing):
+                canvas.create_oval(x, y, x + 2, y + 2, fill=grid_color, outline="")
+
+        # 2. Render smooth background sine audio waves (representing soundwaves)
+        import math
+        points1 = []
+        points2 = []
+        for x in range(0, w, 8):
+            # Cyan audio wave
+            y1 = (h * 0.70) + math.sin(x * 0.005) * 45 + math.cos(x * 0.01) * 15
+            points1.append((x, y1))
+            # Violet audio wave
+            y2 = (h * 0.73) + math.sin(x * 0.007 + 2.0) * 35 - math.cos(x * 0.004) * 20
+            points2.append((x, y2))
+
+        if len(points1) > 1:
+            canvas.create_line(points1, fill=wave_color_1, width=2, smooth=True)
+        if len(points2) > 1:
+            canvas.create_line(points2, fill=wave_color_2, width=2, smooth=True)
 
 
 def main() -> None:
