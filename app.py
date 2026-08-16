@@ -6,6 +6,7 @@ import queue
 import subprocess
 import sys
 import threading
+import tkinter as tk
 import webbrowser
 from io import BytesIO
 from pathlib import Path
@@ -79,7 +80,7 @@ from theme import (
 
 
 SPONSOR_URL = "https://github.com/sponsors/Sorairei"
-CARD_RADIUS = 16
+CARD_RADIUS = 18
 
 
 def resource_path(relative: str) -> Path:
@@ -271,6 +272,104 @@ class QueueCard(ctk.CTkFrame):
         self.retranslate(self.language)
 
 
+class SplashScreen(tk.Toplevel):
+    """Ventana de carga que se muestra mientras la aplicacion se inicializa."""
+
+    _STEPS = [
+        (0.20, "Loading tools..."),
+        (0.55, "Initializing workspace..."),
+        (0.85, "Applying preferences..."),
+        (1.00, "Ready"),
+    ]
+    _STEP_MS = 380
+
+    def __init__(self, root: tk.Tk, logo_path: Path) -> None:
+        super().__init__(root)
+        self.overrideredirect(True)
+        self.configure(bg="#060E0A")
+        self.attributes("-topmost", True)
+
+        width, height = 500, 280
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        x = (screen_w - width) // 2
+        y = (screen_h - height) // 2
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Borde sutil
+        outer = tk.Frame(self, bg="#1A3025", padx=1, pady=1)
+        outer.pack(fill="both", expand=True)
+        inner = tk.Frame(outer, bg="#060E0A")
+        inner.pack(fill="both", expand=True)
+
+        # Logo
+        try:
+            pil_img = Image.open(logo_path)
+            pil_img = pil_img.resize((320, 92), Image.LANCZOS)
+            self._logo_tk = ctk.CTkImage(
+                light_image=pil_img, dark_image=pil_img, size=(320, 92)
+            )
+            logo_lbl = ctk.CTkLabel(inner, image=self._logo_tk, text="", bg_color="#060E0A")
+            logo_lbl.pack(pady=(32, 6))
+        except Exception:
+            tk.Label(
+                inner, text="BeeTales", fg="#8ED62A", bg="#060E0A",
+                font=("Segoe UI", 22, "bold")
+            ).pack(pady=(32, 6))
+
+        # Subtitulo
+        tk.Label(
+            inner, text="Video Downloader",
+            fg="#5D7A65", bg="#060E0A",
+            font=("Segoe UI", 11),
+        ).pack()
+
+        # Contenedor de la barra
+        bar_frame = tk.Frame(inner, bg="#060E0A")
+        bar_frame.pack(fill="x", padx=48, pady=(28, 6))
+
+        track = tk.Frame(bar_frame, bg="#1A3025", height=4)
+        track.pack(fill="x")
+        track.pack_propagate(False)
+        self._fill = tk.Frame(track, bg="#5AAD1E", height=4)
+        self._fill.place(x=0, y=0, relheight=1, relwidth=0)
+
+        # Texto de estado
+        self._status_var = tk.StringVar(value="Starting...")
+        tk.Label(
+            inner, textvariable=self._status_var,
+            fg="#4A6B52", bg="#060E0A",
+            font=("Segoe UI", 9),
+        ).pack()
+
+        self._step_index = 0
+        self._done_event = threading.Event()
+        self.after(120, self._advance)
+
+    def _advance(self) -> None:
+        if self._step_index >= len(self._STEPS):
+            return
+        target_ratio, label = self._STEPS[self._step_index]
+        self._fill.place(relwidth=target_ratio)
+        self._status_var.set(label)
+        self._step_index += 1
+        if self._step_index < len(self._STEPS):
+            self.after(self._STEP_MS, self._advance)
+        else:
+            # Esperar a que las herramientas terminen de detectarse (max 2s)
+            self.after(200, self._wait_for_tools)
+
+    def _wait_for_tools(self) -> None:
+        if self._done_event.is_set():
+            self.after(150, self.destroy)
+        else:
+            self.after(80, self._wait_for_tools)
+
+    def signal_ready(self) -> None:
+        """Llamar desde el hilo de deteccion de herramientas cuando termina."""
+        self._done_event.set()
+
+
 class BeeTalesDownloaderApp(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
@@ -287,7 +386,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.analysis_thread: threading.Thread | None = None
         self.closing = False
         self.shutdown_polls = 0
-        self.tools = detect_tools()
+        self.tools: Any = None
 
         self.title(f"{tr('app_title', self.language)} v{APP_VERSION}")
         self.geometry("1320x820")
@@ -365,7 +464,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         sidebar_actions = ctk.CTkFrame(sidebar, fg_color="transparent")
         sidebar_actions.grid(row=4, column=0, padx=16, pady=(0, 12), sticky="ew")
         sidebar_actions.grid_columnconfigure(0, weight=1)
-        ready = bool(self.tools.ffmpeg and self.tools.ffprobe)
+        ready = bool(self.tools and self.tools.ffmpeg and self.tools.ffprobe)
         self.tools_label = ctk.CTkLabel(
             sidebar_actions,
             text="",
@@ -376,9 +475,12 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.sponsor_button = ctk.CTkButton(
             sidebar_actions,
             text="",
-            height=38,
-            fg_color=SPONSOR,
-            hover_color=SPONSOR_HOVER,
+            height=34,
+            fg_color="transparent",
+            border_width=1,
+            border_color=SPONSOR,
+            text_color=SPONSOR,
+            hover_color=MIDNIGHT_RAISED,
             command=lambda: webbrowser.open(SPONSOR_URL),
         )
         self.sponsor_button.grid(row=1, column=0, pady=(0, 14), sticky="ew")
@@ -493,8 +595,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         queue_panel = ctk.CTkFrame(
             content,
             fg_color=SURFACE,
-            border_width=1,
-            border_color=BORDER,
+            border_width=0,
             corner_radius=CARD_RADIUS,
         )
         queue_panel.grid(row=0, column=1, sticky="nsew")
@@ -661,6 +762,8 @@ class BeeTalesDownloaderApp(ctk.CTk):
             self.media_card, text="", text_color=TEXT_MUTED, anchor="w"
         )
         self.media_meta.grid(row=2, column=1, padx=(0, 14), pady=(2, 15), sticky="w")
+        # Oculta hasta que haya media analizada
+        self.media_card.grid_remove()
 
     def _build_output_card(self) -> None:
         card = ctk.CTkFrame(
@@ -668,6 +771,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
             corner_radius=CARD_RADIUS,
         )
         card.grid(row=2, column=0, pady=(0, 4), sticky="ew")
+        self._output_card = card
         card.grid_columnconfigure(1, weight=1)
         self.step_output_label = ctk.CTkLabel(
             card, text="", text_color=ACCENT_TEXT,
@@ -744,6 +848,8 @@ class BeeTalesDownloaderApp(ctk.CTk):
             command=self._enqueue_download,
         )
         self.download_button.grid(row=5, column=0, columnspan=2, padx=16, pady=(4, 16), sticky="ew")
+        # Oculta hasta que haya media analizada
+        card.grid_remove()
 
     def _build_local_flow_card(self) -> None:
         card = ctk.CTkFrame(
@@ -883,6 +989,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         if not preserve_entry:
             self.url_entry.delete(0, "end")
         self.media_card.grid_forget()
+        self._output_card.grid_remove()
         self.thumbnail_image = self.thumbnail_placeholder
         self.thumbnail_label.configure(image=self.thumbnail_placeholder)
         self.platform_label.configure(text="")
@@ -915,6 +1022,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         )
         self.media = None
         self.media_card.grid_forget()
+        self._output_card.grid_remove()
         self._set_status(tr("checking_public", self.language))
         self.analysis_thread = threading.Thread(
             target=self._analyze_worker, args=(url, generation), daemon=True
@@ -944,6 +1052,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         )
         self.media_meta.configure(text=meta)
         self.media_card.grid(row=1, column=0, pady=(0, 12), sticky="ew")
+        self._output_card.grid(row=2, column=0, pady=(0, 4), sticky="ew")
         values = [f"{height}p" for height in reversed(media.qualities)]
         self.quality_menu.configure(values=values)
         self.quality_menu.set(f"{media.default_quality}p")
@@ -1226,7 +1335,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.sidebar_product_label.configure(text=tr("sidebar_product", self.language))
         self.local_title_label.configure(text=tr("local_title", self.language))
         self.local_description_label.configure(text=tr("local_description", self.language))
-        ready = bool(self.tools.ffmpeg and self.tools.ffprobe)
+        ready = bool(self.tools and self.tools.ffmpeg and self.tools.ffprobe)
         self.tools_label.configure(text=tr("tools_ready" if ready else "tools_missing", self.language))
         self.sponsor_button.configure(text=tr("sponsor", self.language))
         self.language_label.configure(text=tr("language", self.language))
@@ -1293,7 +1402,40 @@ class BeeTalesDownloaderApp(ctk.CTk):
 
 def main() -> None:
     ctk.set_default_color_theme("blue")
+
+    # Raiz oculta necesaria para que Toplevel funcione antes que CTk
+    _root = tk.Tk()
+    _root.withdraw()
+
+    logo_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets/thebeetales-logo.png"
+    splash = SplashScreen(_root, logo_path)
+    splash.update()
+
+    # Detectar herramientas en un hilo paralelo mientras el splash se muestra
+    _tools_result: list[Any] = []
+
+    def _detect() -> None:
+        _tools_result.append(detect_tools())
+        splash.signal_ready()
+
+    threading.Thread(target=_detect, daemon=True).start()
+
+    # Esperar activamente a que el splash termine su animacion y las herramientas carguen
+    while splash.winfo_exists():
+        try:
+            _root.update()
+        except tk.TclError:
+            break
+
+    _root.destroy()
+
     app = BeeTalesDownloaderApp()
+    # Asignar las herramientas ya detectadas
+    if _tools_result:
+        app.tools = _tools_result[0]
+    else:
+        app.tools = detect_tools()
+    app._apply_translations()
     app.mainloop()
 
 
