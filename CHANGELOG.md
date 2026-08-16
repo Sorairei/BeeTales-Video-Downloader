@@ -19,6 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Final MP4 probing and automatic local H.264/AAC compatibility conversion when required.
 - Complete English, Spanish, Polish, and Portuguese interfaces with English as the default and fallback.
 - A source-link clear action and `Esc` shortcut that reset analysis without changing queued jobs.
+- A private local workflow card highlighting the public link, local processing, and local destination steps.
 
 ### Changed
 
@@ -28,6 +29,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Preferred Instagram's combined H.264/AAC formats at compatible vertical resolutions to avoid VP9-in-MP4 playback issues.
 - Replaced the single scrolling workspace with an enterprise two-zone workflow and persistent queue panel.
 - Migrated appearance preferences to stable internal codes and added a persistent language preference.
+
+### Fixed
+
+- Prevented MP3 extraction from reusing and deleting an existing same-title MP4 by isolating audio output filenames.
+- Kept the selected output format visible on completed, cancelled, and failed queue items.
 
 ### Security
 

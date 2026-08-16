@@ -188,7 +188,10 @@ class QueueCard(ctk.CTkFrame):
         self.language = language
         state = self.job.state
         if state == "completed":
-            self.status_label.configure(text=tr("completed", language), text_color=SUCCESS)
+            self.status_label.configure(
+                text=f"{self._output_label()} · {tr('completed', language)}",
+                text_color=SUCCESS,
+            )
             self.action.configure(
                 text=tr("open_folder", language),
                 state="normal",
@@ -199,7 +202,10 @@ class QueueCard(ctk.CTkFrame):
                 command=lambda: open_directory(self.destination or self.job.request.destination, language),
             )
         elif state == "cancelled":
-            self.status_label.configure(text=tr("cancelled", language), text_color=TEXT_MUTED)
+            self.status_label.configure(
+                text=f"{self._output_label()} · {tr('cancelled', language)}",
+                text_color=TEXT_MUTED,
+            )
             self.action.configure(text=tr("cancelled", language), state="disabled")
         elif state == "failed":
             message = (
@@ -207,7 +213,9 @@ class QueueCard(ctk.CTkFrame):
                 if self.failure_message
                 else tr("unexpected_download", language)
             )
-            self.status_label.configure(text=message, text_color=DANGER)
+            self.status_label.configure(
+                text=f"{self._output_label()} · {message}", text_color=DANGER
+            )
             self.action.configure(text=tr("error", language), state="disabled")
         elif state == "cancelling":
             self.status_label.configure(text=tr("cancelling", language), text_color=TEXT_MUTED)
@@ -480,6 +488,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self._build_source_card()
         self._build_preview_card()
         self._build_output_card()
+        self._build_local_flow_card()
 
         queue_panel = ctk.CTkFrame(
             content,
@@ -735,6 +744,80 @@ class BeeTalesDownloaderApp(ctk.CTk):
             command=self._enqueue_download,
         )
         self.download_button.grid(row=5, column=0, columnspan=2, padx=16, pady=(4, 16), sticky="ew")
+
+    def _build_local_flow_card(self) -> None:
+        card = ctk.CTkFrame(
+            self.workflow,
+            fg_color=ACCENT_SOFT,
+            border_width=1,
+            border_color=BORDER_STRONG,
+            corner_radius=CARD_RADIUS,
+        )
+        card.grid(row=3, column=0, pady=(8, 4), sticky="ew")
+        card.grid_columnconfigure(0, weight=1)
+
+        heading = ctk.CTkFrame(card, fg_color="transparent")
+        heading.grid(row=0, column=0, padx=16, pady=(14, 8), sticky="ew")
+        heading.grid_columnconfigure(0, weight=1)
+        self.local_flow_heading = ctk.CTkLabel(
+            heading,
+            text="",
+            text_color=ACCENT_TEXT,
+            anchor="w",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold"),
+        )
+        self.local_flow_heading.grid(row=0, column=0, sticky="w")
+        self.local_flow_platforms = ctk.CTkLabel(
+            heading,
+            text="YouTube  ·  TikTok  ·  Instagram  ·  X",
+            text_color=TEXT_MUTED,
+            anchor="e",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=10),
+        )
+        self.local_flow_platforms.grid(row=0, column=1, padx=(12, 0), sticky="e")
+
+        flow = ctk.CTkFrame(card, fg_color="transparent")
+        flow.grid(row=1, column=0, padx=16, pady=(0, 14), sticky="ew")
+        for column in (0, 2, 4):
+            flow.grid_columnconfigure(column, weight=1, uniform="local-flow")
+
+        self.local_flow_steps: list[tuple[ctk.CTkLabel, ctk.CTkLabel]] = []
+        for column in (0, 2, 4):
+            step = ctk.CTkFrame(
+                flow,
+                fg_color=SURFACE,
+                border_width=1,
+                border_color=BORDER,
+                corner_radius=10,
+            )
+            step.grid(row=0, column=column, sticky="nsew")
+            title = ctk.CTkLabel(
+                step,
+                text="",
+                text_color=TEXT,
+                font=ctk.CTkFont(family=FONT_FAMILY, size=11, weight="bold"),
+            )
+            title.pack(anchor="w", padx=11, pady=(9, 1))
+            description = ctk.CTkLabel(
+                step,
+                text="",
+                text_color=TEXT_MUTED,
+                anchor="w",
+                justify="left",
+                wraplength=165,
+                font=ctk.CTkFont(family=FONT_FAMILY, size=10),
+            )
+            description.pack(anchor="w", padx=11, pady=(0, 9))
+            self.local_flow_steps.append((title, description))
+
+        for column in (1, 3):
+            ctk.CTkLabel(
+                flow,
+                text="→",
+                width=24,
+                text_color=ACCENT_TEXT,
+                font=ctk.CTkFont(family=FONT_FAMILY, size=17, weight="bold"),
+            ).grid(row=0, column=column, padx=5)
 
     def _bind_keyboard_shortcuts(self) -> None:
         self.bind_all("<Control-l>", self._focus_url)
@@ -1175,6 +1258,13 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.choose_button.configure(text=tr("choose", self.language))
         self.rights_checkbox.configure(text=tr("rights", self.language))
         self.download_button.configure(text=tr("add_queue", self.language))
+        self.local_flow_heading.configure(text=tr("local_flow_heading", self.language))
+        flow_keys = ("public_link", "local_processing", "your_folder")
+        for index, ((title, description), key) in enumerate(
+            zip(self.local_flow_steps, flow_keys, strict=True), start=1
+        ):
+            title.configure(text=f"{index:02}  {tr(f'flow_{key}', self.language)}")
+            description.configure(text=tr(f"flow_{key}_description", self.language))
         self.queue_heading_label.configure(text=tr("step_queue", self.language))
         self.help_button.configure(text=tr("keyboard_help", self.language))
         self.clear_queue_button.configure(text=tr("clear_finished", self.language))

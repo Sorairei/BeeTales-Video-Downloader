@@ -157,6 +157,21 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(processor["preferredcodec"], "mp3")
         self.assertEqual(processor["preferredquality"], "320")
 
+    def test_audio_intermediate_name_cannot_collide_with_video_output(self) -> None:
+        video = build_download_options(
+            DownloadRequest("https://youtu.be/x", "video", Path("C:/Downloads")),
+            self.tools,
+        )
+        audio = build_download_options(
+            DownloadRequest("https://youtu.be/x", "audio", Path("C:/Downloads")),
+            self.tools,
+        )
+        video_template = video["outtmpl"]["default"]
+        audio_template = audio["outtmpl"]["default"]
+        self.assertNotEqual(video_template, audio_template)
+        self.assertNotIn("[audio]", video_template)
+        self.assertIn("[audio]", audio_template)
+
     def test_unknown_values_fall_back_safely(self) -> None:
         request = DownloadRequest(
             "https://youtu.be/x", "audio", Path("C:/Downloads"), quality=9999, audio_bitrate=1

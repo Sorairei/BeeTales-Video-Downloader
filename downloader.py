@@ -331,10 +331,16 @@ def build_download_options(
     )
     bitrate = request.audio_bitrate if request.audio_bitrate in SUPPORTED_BITRATES else 192
 
+    output_template = "%(title).150B [%(id)s].%(ext)s"
+    if request.output_type == "audio":
+        # Audio extraction deletes its downloaded source after conversion. A stable
+        # suffix prevents that temporary source from ever matching an existing MP4.
+        output_template = "%(title).142B [%(id)s] [audio].%(ext)s"
+
     options = {
         **_common_options(paths),
         "paths": {"home": str(request.destination)},
-        "outtmpl": {"default": "%(title).150B [%(id)s].%(ext)s"},
+        "outtmpl": {"default": output_template},
         "max_filesize": MAX_FILESIZE_BYTES,
         "continuedl": True,
         "overwrites": False,

@@ -87,7 +87,7 @@ Processing runs on the user's computer through yt-dlp, FFmpeg, FFprobe, and Deno
 | Output | Main controls | Processing |
 | --- | --- | --- |
 | Video MP4 | Detected source resolution | Video and audio selection, local merge, MP4 remux, and metadata |
-| Audio MP3 | 128, 192, 256, or 320 kbps | Best public audio selection, local MP3 conversion, and metadata |
+| Audio MP3 | 128, 192, 256, or 320 kbps | Best public audio selection, isolated `[audio]` filename, local MP3 conversion, and metadata |
 
 Spotify, bulk downloads, playlists, private content, accounts, cookies, payment bypasses, DRM bypasses, and artificial watermark removal are intentionally outside the project scope.
 
@@ -103,6 +103,8 @@ Spotify, bulk downloads, playlists, private content, accounts, cookies, payment 
 7. yt-dlp downloads directly from the public platform to the selected local folder.
 8. FFmpeg merges, validates, or converts the media and adds metadata locally.
 9. The completed item can open its destination folder or be cleared from the queue.
+
+Video and audio downloads use distinct stable filenames. An MP3 receives an `[audio]` suffix so its temporary extraction source can never replace or remove an existing MP4 of the same media.
 
 Cancelling signals the active job through yt-dlp progress and post-processing hooks. Closing the application asks for confirmation when operations are active, cancels the queue, and waits for local workers before exiting.
 
