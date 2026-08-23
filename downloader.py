@@ -331,6 +331,12 @@ def _common_options(paths: ToolPaths) -> dict:
         "no_warnings": True,
         "windowsfilenames": True,
         "trim_file_name": 150,
+        "extractor_args": {
+            "youtube": {
+                # Bypass current web PoToken 403 blocks by forcing Android client
+                "player_client": ["android"]
+            }
+        },
     }
     if paths.ffmpeg_directory:
         options["ffmpeg_location"] = str(paths.ffmpeg_directory)
