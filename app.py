@@ -86,7 +86,7 @@ from theme import (
 
 
 SPONSOR_URL = "https://github.com/sponsors/Sorairei"
-CARD_RADIUS = 24
+CARD_RADIUS = 16
 _DRAW_DEBOUNCE_MS = 80        # Debounce delay for canvas redraws on resize (ms)
 _SHUTDOWN_TIMEOUT_MS = 8_000  # Hard deadline for workers to stop on close (ms)
 
@@ -512,15 +512,6 @@ class BeeTalesDownloaderApp(ctk.CTk):
         workspace.grid_columnconfigure(0, weight=1)
         workspace.grid_rowconfigure(1, weight=1)
 
-        # High-tech background grid and audio waves
-        self.bg_canvas = tk.Canvas(
-            workspace,
-            bg=resolved(APP_BACKGROUND, self.preferences.appearance),
-            bd=0,
-            highlightthickness=0
-        )
-        self.bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
-        self.bg_canvas.bind("<Configure>", self._schedule_draw_background)
 
 
         header = ctk.CTkFrame(workspace, fg_color="transparent")
@@ -1412,59 +1403,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         else:
             self._set_status(tr("ready", self.language))
 
-    def _schedule_draw_background(self, event: Any = None) -> None:
-        """Debounce canvas redraws to prevent UI freeze on rapid resize/restore events."""
-        if self._draw_pending:
-            self.after_cancel(self._draw_pending)
-        self._draw_pending = self.after(_DRAW_DEBOUNCE_MS, self._draw_background)
 
-    def _draw_background(self, event: Any = None) -> None:
-        """Render a subtle high-tech dot grid and audio waves on the workspace background canvas."""
-        self._draw_pending = None
-        canvas = self.bg_canvas
-        canvas.delete("all")
-
-        w = canvas.winfo_width()
-        h = canvas.winfo_height()
-        if w <= 1 or h <= 1:
-            return
-
-        resolved_mode = ctk.get_appearance_mode().lower()
-        is_dark = resolved_mode == "dark"
-        # Midnight Neon aesthetic
-        grid_color = "#0B1021" if is_dark else "#E5ECF6"
-        neon_cyan = "#00E5FF" if is_dark else "#00B8CC"
-        neon_purple = "#9D00FF" if is_dark else "#7A00CC"
-
-        # 1. Subtle, sparse grid lines for a digital/cyberpunk feel
-        grid_spacing = 64
-        for x in range(0, w, grid_spacing):
-            canvas.create_line(x, 0, x, h, fill=grid_color, dash=(2, 4))
-        for y in range(0, h, grid_spacing):
-            canvas.create_line(0, y, w, y, fill=grid_color, dash=(2, 4))
-
-        # 2. Render sharp neon laser curves (sine waves)
-        # math is imported at module level — no per-call import overhead
-        points1 = []
-        points2 = []
-        points3 = []
-        for x in range(0, w, 10):
-            # Electric Purple wave
-            y1 = (h * 0.85) + math.sin(x * 0.003) * 60 + math.cos(x * 0.015) * 10
-            points1.append((x, y1))
-            # Neon Cyan wave
-            y2 = (h * 0.80) + math.sin(x * 0.005 + 1.0) * 45 - math.cos(x * 0.008) * 15
-            points2.append((x, y2))
-            # Secondary subtle cyan wave
-            y3 = (h * 0.90) + math.sin(x * 0.002 + 0.5) * 30
-            points3.append((x, y3))
-
-        if len(points1) > 1:
-            canvas.create_line(points1, fill=neon_purple, width=3, smooth=True, capstyle="round")
-        if len(points2) > 1:
-            canvas.create_line(points2, fill=neon_cyan, width=2, smooth=True, capstyle="round")
-        if len(points3) > 1:
-            canvas.create_line(points3, fill=neon_cyan, width=1, smooth=True, stipple="gray50")
 
 
 def main() -> None:

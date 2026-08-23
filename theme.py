@@ -7,35 +7,35 @@ from typing import TypeAlias
 
 Color: TypeAlias = str | tuple[str, str]
 
-PRIMARY = "#00E5FF"
-PRIMARY_HOVER = "#00B8CC"
-ACCENT_TEXT: Color = ("#00606B", "#80F6FF")
-# Slate blue and deep cyan buttons
-SEGMENT_SELECTED: Color = (PRIMARY, "#0F2836")
-SEGMENT_SELECTED_HOVER: Color = (PRIMARY_HOVER, "#153A4D")
-LIME = "#00FFA3"
-ORANGE = "#FF8A00"
-SPONSOR = "#9D00FF"
-SPONSOR_HOVER = "#7A00CC"
-# Main background and surfaces: Midnight Neon / Cyberpunk
-MIDNIGHT = "#05070D"
-MIDNIGHT_RAISED = "#0A0D18"
+PRIMARY = "#1D9BF0"
+PRIMARY_HOVER = "#1A8CD8"
+ACCENT_TEXT: Color = ("#005A94", "#1D9BF0")
+# Segment buttons
+SEGMENT_SELECTED: Color = (PRIMARY, "#16202A")
+SEGMENT_SELECTED_HOVER: Color = (PRIMARY_HOVER, "#192734")
+LIME = "#00BA7C"
+ORANGE = "#FF7A00"
+SPONSOR = "#C20E5F"
+SPONSOR_HOVER = "#A30C50"
+# Main background and surfaces: Social Minimalist (X / YouTube Dark)
+MIDNIGHT = "#0F0F0F"
+MIDNIGHT_RAISED = "#16181C"
 
-APP_BACKGROUND: Color = ("#F0F3F8", "#05070D")
-SURFACE: Color = ("#FFFFFF", "#0A0E1A")
-SURFACE_ALT: Color = ("#F4F7FC", "#0F1426")
-SURFACE_ELEVATED: Color = ("#FFFFFF", "#141A33")
-BORDER: Color = ("#DEE4F0", "#1E2540")
-BORDER_STRONG: Color = ("#CCD5E6", "#293256")
-ACCENT_SOFT: Color = ("#E0F7FC", "#081B2B")
-TEXT: Color = ("#10141D", "#FFFFFF")
-TEXT_MUTED: Color = ("#606B82", "#8492B3")
-SIDEBAR_TEXT = "#FFFFFF"
-SIDEBAR_MUTED = "#8492B3"
-SUCCESS: Color = ("#007A44", "#00FFA3")
-WARNING = "#FFB300"
-DANGER: Color = ("#C62828", "#FF2A55")
-DANGER_HOVER = "#D80032"
+APP_BACKGROUND: Color = ("#F0F3F8", "#0F0F0F")
+SURFACE: Color = ("#FFFFFF", "#16181C")
+SURFACE_ALT: Color = ("#F4F7FC", "#202327")
+SURFACE_ELEVATED: Color = ("#FFFFFF", "#2F3336")
+BORDER: Color = ("#DEE4F0", "#2F3336")
+BORDER_STRONG: Color = ("#CCD5E6", "#3E4144")
+ACCENT_SOFT: Color = ("#E0F7FC", "#16202A")
+TEXT: Color = ("#0F1419", "#F7F9F9")
+TEXT_MUTED: Color = ("#536471", "#AAB8C2")
+SIDEBAR_TEXT = "#F7F9F9"
+SIDEBAR_MUTED = "#AAB8C2"
+SUCCESS: Color = ("#007348", "#00BA7C")
+WARNING = "#FFD400"
+DANGER: Color = ("#C81423", "#F4212E")
+DANGER_HOVER = "#DC1E29"
 FONT_FAMILY = "Segoe UI"
 
 
