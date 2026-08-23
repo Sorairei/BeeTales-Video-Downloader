@@ -86,7 +86,7 @@ from theme import (
 
 
 SPONSOR_URL = "https://github.com/sponsors/Sorairei"
-CARD_RADIUS = 18
+CARD_RADIUS = 24
 _DRAW_DEBOUNCE_MS = 80        # Debounce delay for canvas redraws on resize (ms)
 _SHUTDOWN_TIMEOUT_MS = 8_000  # Hard deadline for workers to stop on close (ms)
 
@@ -444,29 +444,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         )
         self.sidebar_product_label.grid(row=1, column=0, padx=20, pady=(0, 12))
 
-        identity = ctk.CTkFrame(
-            sidebar,
-            fg_color=MIDNIGHT_RAISED,
-            border_width=1,
-            border_color="#274732",
-            corner_radius=14,
-        )
-        identity.grid(row=2, column=0, padx=16, pady=(6, 12), sticky="ew")
-        self.sora_image = self._ctk_image("assets/sora-avatar.png", (78, 78))
-        ctk.CTkLabel(identity, text="", image=self.sora_image).pack(pady=(12, 4))
-        self.local_title_label = ctk.CTkLabel(
-            identity,
-            text="",
-            text_color=SIDEBAR_TEXT,
-            justify="center",
-            wraplength=176,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
-        )
-        self.local_title_label.pack(padx=10)
-        self.local_description_label = ctk.CTkLabel(
-            identity, text="", text_color=SIDEBAR_MUTED, justify="center"
-        )
-        self.local_description_label.pack(padx=10, pady=(3, 12))
+        # Identity frame removed
 
         sidebar_actions = ctk.CTkFrame(sidebar, fg_color="transparent")
         sidebar_actions.grid(row=4, column=0, padx=16, pady=(0, 12), sticky="ew")
@@ -546,18 +524,23 @@ class BeeTalesDownloaderApp(ctk.CTk):
 
 
         header = ctk.CTkFrame(workspace, fg_color="transparent")
-        header.grid(row=0, column=0, padx=28, pady=(22, 14), sticky="ew")
+        header.grid(row=0, column=0, padx=40, pady=(32, 20), sticky="ew")
         header.grid_columnconfigure(0, weight=1)
         heading = ctk.CTkFrame(header, fg_color="transparent")
         heading.grid(row=0, column=0, sticky="w")
+        
+        self.sora_image = self._ctk_image("assets/sora-avatar.png", (56, 56))
+        sora_icon = ctk.CTkLabel(heading, text="", image=self.sora_image)
+        sora_icon.grid(row=0, column=0, rowspan=2, padx=(0, 16))
+
         self.heading_label = ctk.CTkLabel(
             heading,
             text="",
             text_color=TEXT,
             anchor="w",
-            font=ctk.CTkFont(family=FONT_FAMILY, size=28, weight="bold"),
+            font=ctk.CTkFont(family=FONT_FAMILY, size=32, weight="bold"),
         )
-        self.heading_label.pack(anchor="w")
+        self.heading_label.grid(row=0, column=1, sticky="sw")
         self.subheading_label = ctk.CTkLabel(
             heading,
             text="",
@@ -565,37 +548,12 @@ class BeeTalesDownloaderApp(ctk.CTk):
             anchor="w",
             font=ctk.CTkFont(family=FONT_FAMILY, size=13),
         )
-        self.subheading_label.pack(anchor="w", pady=(2, 0))
+        self.subheading_label.grid(row=1, column=1, sticky="nw", pady=(2, 0))
 
-        assurance = ctk.CTkFrame(
-            header,
-            fg_color=ACCENT_SOFT,
-            border_width=1,
-            border_color=BORDER_STRONG,
-            corner_radius=14,
-        )
-        assurance.grid(row=0, column=1, padx=(14, 0), sticky="e")
-        self.header_mascot = self._ctk_image("assets/frog-mascot.png", (50, 50))
-        ctk.CTkLabel(assurance, text="", image=self.header_mascot).grid(
-            row=0, column=0, padx=(10, 4), pady=7
-        )
-        assurance_text = ctk.CTkFrame(assurance, fg_color="transparent")
-        assurance_text.grid(row=0, column=1, padx=(0, 12), pady=7, sticky="w")
-        self.local_badge_label = ctk.CTkLabel(
-            assurance_text,
-            text="",
-            text_color=ACCENT_TEXT,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=10, weight="bold"),
-        )
-        self.local_badge_label.pack(anchor="w")
-        self.private_badge_label = ctk.CTkLabel(
-            assurance_text, text="", text_color=TEXT_MUTED,
-            font=ctk.CTkFont(family=FONT_FAMILY, size=10),
-        )
-        self.private_badge_label.pack(anchor="w")
+        # Assurance frame removed
 
         content = ctk.CTkFrame(workspace, fg_color="transparent")
-        content.grid(row=1, column=0, padx=28, pady=(0, 10), sticky="nsew")
+        content.grid(row=1, column=0, padx=40, pady=(0, 20), sticky="nsew")
         content.grid_columnconfigure(0, weight=7, uniform="workspace")
         content.grid_columnconfigure(1, weight=4, uniform="workspace")
         content.grid_rowconfigure(0, weight=1)
@@ -1384,8 +1342,6 @@ class BeeTalesDownloaderApp(ctk.CTk):
             output_kind = self._current_output_kind() if hasattr(self, "output_type") else "video"
         self.title(f"{tr('app_title', self.language)} v{APP_VERSION}")
         self.sidebar_product_label.configure(text=tr("sidebar_product", self.language))
-        self.local_title_label.configure(text=tr("local_title", self.language))
-        self.local_description_label.configure(text=tr("local_description", self.language))
         ready = bool(self.tools and self.tools.ffmpeg and self.tools.ffprobe)
         self.tools_label.configure(text=tr("tools_ready" if ready else "tools_missing", self.language))
         self.sponsor_button.configure(text=tr("sponsor", self.language))
@@ -1398,8 +1354,6 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.appearance_menu.set(labels[self.preferences.appearance])
         self.heading_label.configure(text=tr("heading", self.language))
         self.subheading_label.configure(text=tr("subheading", self.language))
-        self.local_badge_label.configure(text=tr("local_badge", self.language))
-        self.private_badge_label.configure(text=tr("private_badge", self.language))
         self.step_link_label.configure(text=f"{tr('step_link', self.language)}  ·  Ctrl+L")
         self.url_entry.configure(placeholder_text=tr("url_placeholder", self.language))
         self.paste_button.configure(text=tr("paste", self.language))
@@ -1477,32 +1431,40 @@ class BeeTalesDownloaderApp(ctk.CTk):
 
         resolved_mode = ctk.get_appearance_mode().lower()
         is_dark = resolved_mode == "dark"
-        grid_color = "#151824" if is_dark else "#E5ECF6"
-        wave_color_1 = "#082A3A" if is_dark else "#E6FAF8"
-        wave_color_2 = "#260C38" if is_dark else "#F6E8FF"
+        # Midnight Neon aesthetic
+        grid_color = "#0B1021" if is_dark else "#E5ECF6"
+        neon_cyan = "#00E5FF" if is_dark else "#00B8CC"
+        neon_purple = "#9D00FF" if is_dark else "#7A00CC"
 
-        # 1. Render tech dot grid
-        grid_spacing = 32
+        # 1. Subtle, sparse grid lines for a digital/cyberpunk feel
+        grid_spacing = 64
         for x in range(0, w, grid_spacing):
-            for y in range(0, h, grid_spacing):
-                canvas.create_oval(x, y, x + 2, y + 2, fill=grid_color, outline="")
+            canvas.create_line(x, 0, x, h, fill=grid_color, dash=(2, 4))
+        for y in range(0, h, grid_spacing):
+            canvas.create_line(0, y, w, y, fill=grid_color, dash=(2, 4))
 
-        # 2. Render smooth background sine audio waves (representing soundwaves)
+        # 2. Render sharp neon laser curves (sine waves)
         # math is imported at module level — no per-call import overhead
         points1 = []
         points2 = []
-        for x in range(0, w, 8):
-            # Cyan audio wave
-            y1 = (h * 0.70) + math.sin(x * 0.005) * 45 + math.cos(x * 0.01) * 15
+        points3 = []
+        for x in range(0, w, 10):
+            # Electric Purple wave
+            y1 = (h * 0.85) + math.sin(x * 0.003) * 60 + math.cos(x * 0.015) * 10
             points1.append((x, y1))
-            # Violet audio wave
-            y2 = (h * 0.73) + math.sin(x * 0.007 + 2.0) * 35 - math.cos(x * 0.004) * 20
+            # Neon Cyan wave
+            y2 = (h * 0.80) + math.sin(x * 0.005 + 1.0) * 45 - math.cos(x * 0.008) * 15
             points2.append((x, y2))
+            # Secondary subtle cyan wave
+            y3 = (h * 0.90) + math.sin(x * 0.002 + 0.5) * 30
+            points3.append((x, y3))
 
         if len(points1) > 1:
-            canvas.create_line(points1, fill=wave_color_1, width=2, smooth=True)
+            canvas.create_line(points1, fill=neon_purple, width=3, smooth=True, capstyle="round")
         if len(points2) > 1:
-            canvas.create_line(points2, fill=wave_color_2, width=2, smooth=True)
+            canvas.create_line(points2, fill=neon_cyan, width=2, smooth=True, capstyle="round")
+        if len(points3) > 1:
+            canvas.create_line(points3, fill=neon_cyan, width=1, smooth=True, stipple="gray50")
 
 
 def main() -> None:

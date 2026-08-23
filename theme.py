@@ -7,35 +7,35 @@ from typing import TypeAlias
 
 Color: TypeAlias = str | tuple[str, str]
 
-PRIMARY = "#00F0FF"
-PRIMARY_HOVER = "#00B8C4"
+PRIMARY = "#00E5FF"
+PRIMARY_HOVER = "#00B8CC"
 ACCENT_TEXT: Color = ("#00606B", "#80F6FF")
 # Slate blue and deep cyan buttons
-SEGMENT_SELECTED: Color = (PRIMARY, "#133C46")
-SEGMENT_SELECTED_HOVER: Color = (PRIMARY_HOVER, "#1E5462")
+SEGMENT_SELECTED: Color = (PRIMARY, "#0F2836")
+SEGMENT_SELECTED_HOVER: Color = (PRIMARY_HOVER, "#153A4D")
 LIME = "#00FFA3"
 ORANGE = "#FF8A00"
-SPONSOR = "#BD00FF"
-SPONSOR_HOVER = "#9A00CF"
-# Main background and surfaces: Obsidian/Slate based rather than Greenish
-MIDNIGHT = "#08090E"
-MIDNIGHT_RAISED = "#111422"
+SPONSOR = "#9D00FF"
+SPONSOR_HOVER = "#7A00CC"
+# Main background and surfaces: Midnight Neon / Cyberpunk
+MIDNIGHT = "#05070D"
+MIDNIGHT_RAISED = "#0A0D18"
 
-APP_BACKGROUND: Color = ("#F0F3F8", "#08090D")
-SURFACE: Color = ("#FFFFFF", "#0F111B")
-SURFACE_ALT: Color = ("#F4F7FC", "#171A27")
-SURFACE_ELEVATED: Color = ("#FFFFFF", "#1E2232")
-BORDER: Color = ("#DEE4F0", "#21263A")
-BORDER_STRONG: Color = ("#CCD5E6", "#2D3452")
-ACCENT_SOFT: Color = ("#E0F7FC", "#0C2332")
-TEXT: Color = ("#10141D", "#EBF2FC")
-TEXT_MUTED: Color = ("#606B82", "#98A4B8")
-SIDEBAR_TEXT = "#EBF2FC"
-SIDEBAR_MUTED = "#98A4B8"
+APP_BACKGROUND: Color = ("#F0F3F8", "#05070D")
+SURFACE: Color = ("#FFFFFF", "#0A0E1A")
+SURFACE_ALT: Color = ("#F4F7FC", "#0F1426")
+SURFACE_ELEVATED: Color = ("#FFFFFF", "#141A33")
+BORDER: Color = ("#DEE4F0", "#1E2540")
+BORDER_STRONG: Color = ("#CCD5E6", "#293256")
+ACCENT_SOFT: Color = ("#E0F7FC", "#081B2B")
+TEXT: Color = ("#10141D", "#FFFFFF")
+TEXT_MUTED: Color = ("#606B82", "#8492B3")
+SIDEBAR_TEXT = "#FFFFFF"
+SIDEBAR_MUTED = "#8492B3"
 SUCCESS: Color = ("#007A44", "#00FFA3")
 WARNING = "#FFB300"
-DANGER: Color = ("#C62828", "#FF4662")
-DANGER_HOVER = "#B71C1C"
+DANGER: Color = ("#C62828", "#FF2A55")
+DANGER_HOVER = "#D80032"
 FONT_FAMILY = "Segoe UI"
 
 
