@@ -279,7 +279,7 @@ def localize_engine_error(message: str, language: str) -> str:
         (("no está disponible", "not available", "eliminad", "removed"), "error_unavailable"),
         (("no contiene", "does not contain"), "error_no_video"),
         (("conectar", "conexión", "connection", "network", "timed out"), "error_network"),
-        (("no es compatible", "unsupported", "enlace"), "error_unsupported"),
+        (("no es compatible", "unsupported", "no suitable extractor"), "error_unsupported"),
         (("ffmpeg", "ffprobe"), "error_ffmpeg"),
         (("limitando", "429", "too many requests"), "error_rate"),
         (("sesión", "session", "age"), "error_session"),
