@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+import math
 import queue
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
+import traceback
 import webbrowser
 from io import BytesIO
 from pathlib import Path
@@ -83,6 +87,10 @@ from theme import (
 
 SPONSOR_URL = "https://github.com/sponsors/Sorairei"
 CARD_RADIUS = 18
+_DRAW_DEBOUNCE_MS = 80        # Debounce delay for canvas redraws on resize (ms)
+_SHUTDOWN_TIMEOUT_MS = 8_000  # Hard deadline for workers to stop on close (ms)
+
+logger = logging.getLogger(__name__)
 
 
 def resource_path(relative: str) -> Path:
@@ -383,7 +391,8 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.analysis_generation = 0
         self.analysis_thread: threading.Thread | None = None
         self.closing = False
-        self.shutdown_polls = 0
+        self._draw_pending: str | None = None
+        self._shutdown_deadline: str | None = None
         self.tools: Any = None
 
         self.title(f"{tr('app_title', self.language)} v{APP_VERSION}")
@@ -533,7 +542,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
             highlightthickness=0
         )
         self.bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
-        self.bg_canvas.bind("<Configure>", self._draw_background)
+        self.bg_canvas.bind("<Configure>", self._schedule_draw_background)
 
 
         header = ctk.CTkFrame(workspace, fg_color="transparent")
@@ -1056,6 +1065,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         except DownloaderError as exc:
             self.events.put(("analysis_error", generation, str(exc)))
         except Exception:
+            logger.error("Unexpected error in analysis worker:\n%s", traceback.format_exc())
             self.events.put(("analysis_unexpected", generation))
 
     def _show_media(self, media: MediaInfo, thumbnail: bytes | None = None) -> None:
@@ -1208,6 +1218,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
                 self.queue_manager.finish(job.job_id, "failed")
                 self.events.put(("failed", job.job_id, str(exc)))
             except Exception:
+                logger.error("Unexpected error in download worker:\n%s", traceback.format_exc())
                 self.queue_manager.finish(job.job_id, "failed")
                 self.events.put(("failed_unexpected", job.job_id))
             finally:
@@ -1301,7 +1312,9 @@ class BeeTalesDownloaderApp(ctk.CTk):
     def _request_close(self) -> None:
         if self.closing:
             return
-        operations = self.queue_manager.active_count + int(
+        # Single atomic read — avoids acquiring the queue lock multiple times
+        c = self.queue_manager.counts()
+        operations = c.active + int(
             bool(self.analysis_thread and self.analysis_thread.is_alive())
         )
         if operations and not messagebox.askyesno(
@@ -1314,14 +1327,24 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.analyze_button.configure(state="disabled")
         self.download_button.configure(state="disabled")
         self._set_status(tr("closing", self.language))
+        # Hard deadline: destroy even if workers are still alive after the timeout
+        self._shutdown_deadline = self.after(_SHUTDOWN_TIMEOUT_MS, self._force_destroy)
         self._wait_for_shutdown()
+
+    def _force_destroy(self) -> None:
+        """Force application exit when workers do not stop within the shutdown timeout."""
+        logger.warning("Shutdown deadline reached — forcing application exit.")
+        self.destroy()
 
     def _wait_for_shutdown(self) -> None:
         analysis_running = bool(self.analysis_thread and self.analysis_thread.is_alive())
-        if (not self.download_worker.is_alive() and not analysis_running) or self.shutdown_polls >= 250:
+        if not self.download_worker.is_alive() and not analysis_running:
+            # Workers finished cleanly — cancel the hard deadline before destroying
+            if self._shutdown_deadline:
+                self.after_cancel(self._shutdown_deadline)
+                self._shutdown_deadline = None
             self.destroy()
             return
-        self.shutdown_polls += 1
         self.after(100, self._wait_for_shutdown)
 
     def _set_status(self, message: str, error: bool = False, success: bool = False) -> None:
@@ -1339,7 +1362,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         resolved_mode = ctk.get_appearance_mode()
         bg_color = resolved(APP_BACKGROUND, resolved_mode)
         self.bg_canvas.configure(bg=bg_color)
-        self._draw_background()
+        self._schedule_draw_background()
 
     def _change_appearance(self, label: str) -> None:
         labels = appearance_labels(self.language)
@@ -1418,8 +1441,16 @@ class BeeTalesDownloaderApp(ctk.CTk):
                 if item
             )
             self.media_meta.configure(text=meta)
-        for card in self.queue_cards.values():
-            card.retranslate(self.language)
+        # Defer retranslation to the next event-loop tick: prevents a stall when
+        # many queue cards exist (each configure() call holds the main thread).
+        _lang = self.language
+        _cards = list(self.queue_cards.values())
+
+        def _retranslate() -> None:
+            for card in _cards:
+                card.retranslate(_lang)
+
+        self.after(0, _retranslate)
         if self.analyzing:
             self._set_status(tr("checking_public", self.language))
         elif self.media:
@@ -1427,8 +1458,15 @@ class BeeTalesDownloaderApp(ctk.CTk):
         else:
             self._set_status(tr("ready", self.language))
 
+    def _schedule_draw_background(self, event: Any = None) -> None:
+        """Debounce canvas redraws to prevent UI freeze on rapid resize/restore events."""
+        if self._draw_pending:
+            self.after_cancel(self._draw_pending)
+        self._draw_pending = self.after(_DRAW_DEBOUNCE_MS, self._draw_background)
+
     def _draw_background(self, event: Any = None) -> None:
         """Render a subtle high-tech dot grid and audio waves on the workspace background canvas."""
+        self._draw_pending = None
         canvas = self.bg_canvas
         canvas.delete("all")
 
@@ -1450,7 +1488,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
                 canvas.create_oval(x, y, x + 2, y + 2, fill=grid_color, outline="")
 
         # 2. Render smooth background sine audio waves (representing soundwaves)
-        import math
+        # math is imported at module level — no per-call import overhead
         points1 = []
         points2 = []
         for x in range(0, w, 8):
@@ -1491,6 +1529,7 @@ def main() -> None:
     while splash.winfo_exists():
         try:
             _root.update()
+            time.sleep(0.016)  # ~60 fps cap — prevents 100% CPU during splash
         except tk.TclError:
             break
 

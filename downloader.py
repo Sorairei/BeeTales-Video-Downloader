@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import ipaddress
 import os
@@ -205,6 +206,25 @@ def validate_url(value: str) -> ValidatedUrl:
     return ValidatedUrl(normalized, platform)
 
 
+def _resolve_hostname_with_timeout(hostname: str, timeout: float = 5.0) -> list:
+    """DNS lookup with an explicit timeout to prevent indefinite blocking.
+
+    socket.getaddrinfo has no built-in timeout parameter. Wrapping it in a
+    ThreadPoolExecutor lets us cancel the wait after *timeout* seconds so that
+    a slow or unresponsive DNS server cannot stall the analysis worker thread.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            socket.getaddrinfo, hostname, 443, socket.AF_UNSPEC, socket.SOCK_STREAM
+        )
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError as exc:
+            raise DownloaderError(
+                "No fue posible localizar la portada pública (tiempo de espera agotado)."
+            ) from exc
+
+
 def _validate_thumbnail_url(value: str) -> str:
     try:
         parts = urlsplit(value)
@@ -220,7 +240,9 @@ def _validate_thumbnail_url(value: str) -> str:
     ):
         raise ValidationError("La portada debe usar un enlace HTTPS público.")
     try:
-        addresses = socket.getaddrinfo(parts.hostname, 443, type=socket.SOCK_STREAM)
+        addresses = _resolve_hostname_with_timeout(parts.hostname)
+    except DownloaderError:
+        raise
     except OSError as exc:
         raise DownloaderError("No fue posible localizar la portada pública.") from exc
     if not addresses:
