@@ -139,6 +139,16 @@ class PlatformCompatibilityTests(unittest.TestCase):
 
         formats = [
             {
+                "format_id": "video-360",
+                "url": "https://media.example.invalid/video-360",
+                "ext": "mp4",
+                "vcodec": "avc1.64001f",
+                "acodec": "none",
+                "height": 360,
+                "width": 640,
+                "protocol": "https",
+            },
+            {
                 "format_id": "video-720",
                 "url": "https://media.example.invalid/video",
                 "ext": "mp4",
@@ -146,6 +156,16 @@ class PlatformCompatibilityTests(unittest.TestCase):
                 "acodec": "none",
                 "height": 720,
                 "width": 1280,
+                "protocol": "https",
+            },
+            {
+                "format_id": "video-1080",
+                "url": "https://media.example.invalid/video-1080",
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "height": 1080,
+                "width": 1920,
                 "protocol": "https",
             },
             {
@@ -158,25 +178,26 @@ class PlatformCompatibilityTests(unittest.TestCase):
             },
         ]
         for platform_id in ("youtube", "tiktok", "instagram", "x"):
-            with self.subTest(platform=platform_id):
-                request = DownloadRequest(
-                    "https://youtu.be/compatibility-test",
-                    "video",
-                    Path("C:/Downloads"),
-                    quality=720,
-                )
-                options = build_download_options(
-                    request, ToolPaths(None, None, None), platform_id=platform_id
-                )
-                with yt_dlp.YoutubeDL({"quiet": True}) as client:
-                    selected = list(
-                        client.build_format_selector(options["format"])({"formats": formats})
+            for quality in (720, 1080):
+                with self.subTest(platform=platform_id, quality=quality):
+                    request = DownloadRequest(
+                        "https://youtu.be/compatibility-test",
+                        "video",
+                        Path("C:/Downloads"),
+                        quality=quality,
                     )
-                self.assertEqual(len(selected), 1)
-                self.assertEqual(
-                    [item["format_id"] for item in selected[0]["requested_formats"]],
-                    ["video-720", "audio-aac"],
-                )
+                    options = build_download_options(
+                        request, ToolPaths(None, None, None), platform_id=platform_id
+                    )
+                    with yt_dlp.YoutubeDL({"quiet": True}) as client:
+                        selected = list(
+                            client.build_format_selector(options["format"])({"formats": formats})
+                        )
+                    self.assertEqual(len(selected), 1)
+                    self.assertEqual(
+                        [item["format_id"] for item in selected[0]["requested_formats"]],
+                        [f"video-{quality}", "audio-aac"],
+                    )
 
 
 class OptionTests(unittest.TestCase):
@@ -193,6 +214,7 @@ class OptionTests(unittest.TestCase):
         self.assertFalse(options["cachedir"])
         self.assertEqual(options["playlistend"], 1)
         self.assertEqual(options["js_runtimes"]["deno"]["path"], "C:\\BeeTales\\bin\\deno.exe")
+        self.assertNotIn("extractor_args", options)
 
     def test_video_prefers_mp4_with_requested_quality(self) -> None:
         request = DownloadRequest("https://youtu.be/x", "video", Path("C:/Downloads"), quality=720)
@@ -480,7 +502,7 @@ class QueueManagerTests(unittest.TestCase):
 
 class ReleaseMetadataTests(unittest.TestCase):
     def test_version_is_consistent_across_release_metadata(self) -> None:
-        self.assertEqual(version_tuple(), (0, 5, 0, 0))
+        self.assertEqual(version_tuple(), (0, 5, 1, 0))
         self.assertIn(f'ProductVersion", "{APP_VERSION}"', render_windows_version_info())
         self.assertEqual(
             archive_name(), f"BeeTales-Video-Downloader-v{APP_VERSION}-Windows-x64.zip"

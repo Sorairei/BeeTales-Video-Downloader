@@ -63,7 +63,7 @@ Processing runs on the user's computer through yt-dlp, FFmpeg, FFprobe, and Deno
 | Public sources | Individual YouTube videos and Shorts, TikTok videos, Instagram posts and Reels, and X video posts |
 | Video | MP4 output with video and audio merged locally through FFmpeg |
 | Audio | MP3 output at 128, 192, 256, or 320 kbps |
-| Quality | Real source heights are detected, including non-standard vertical resolutions |
+| Quality | Selects the requested source height up to 1080p when offered; real and non-standard heights are detected |
 | Compatibility | H.264 video and AAC audio are preferred, with automatic format fallbacks |
 | Final validation | Completed MP4 files are probed and incompatible VP9, AV1, HEVC, audio, or pixel formats are converted locally |
 | Queue | Sequential downloads with per-item progress, speed, remaining time, and cancellation |
@@ -160,6 +160,7 @@ flowchart LR
 - Partial downloads use yt-dlp's resumable behavior when supported by the platform.
 - Downloads are limited to two hours and 2 GB per item.
 - Video selection prefers H.264 and AAC for broad MP4 compatibility before trying fallback formats.
+- YouTube uses yt-dlp's default player clients and the bundled Deno runtime instead of forcing the Android client, which can expose only lower resolutions.
 - Instagram prefers its combined H.264/AAC MP4 at compatible vertical resolutions instead of remuxing VP9 into MP4.
 - Every completed video is probed; incompatible codecs or pixel formats are converted to H.264/AAC `yuv420p` before completion.
 - Real source heights between 144p and 4320p are preserved in the quality selector.

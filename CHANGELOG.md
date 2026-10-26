@@ -10,6 +10,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Additional platform compatibility maintenance as public sites evolve.
 
+## [0.5.1] - 2026-10-25
+
+### Fixed
+
+- Stopped forcing YouTube's Android player client so yt-dlp can discover higher available video resolutions.
+
 ## [0.5.0] - 2026-10-25
 
 ### Added
@@ -102,7 +108,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Kept URLs and queue history out of persistent preferences.
 - Excluded private content, cookies, account sessions, DRM bypasses, and artificial watermark removal.
 
-[Unreleased]: https://github.com/Sorairei/BeeTales-Video-Downloader/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Sorairei/BeeTales-Video-Downloader/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Sorairei/BeeTales-Video-Downloader/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Sorairei/BeeTales-Video-Downloader/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Sorairei/BeeTales-Video-Downloader/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Sorairei/BeeTales-Video-Downloader/releases/tag/v0.3.0
