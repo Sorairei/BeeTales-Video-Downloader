@@ -4,6 +4,8 @@ import tempfile
 import unittest
 import json
 import socket
+import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,11 +21,14 @@ from localization import (
 from downloader import (
     MAX_DURATION_SECONDS,
     DownloadRequest,
+    DownloaderError,
     ToolPaths,
     ValidationError,
+    _resolve_hostname_with_timeout,
     _normalize_info,
     build_analysis_options,
     build_download_options,
+    download_media,
     safe_error_message,
     _validate_thumbnail_url,
     validate_url,
@@ -91,6 +96,87 @@ class UrlValidationTests(unittest.TestCase):
         getaddrinfo.return_value = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
         with self.assertRaises(ValidationError):
             _validate_thumbnail_url("https://localhost/cover.jpg")
+
+    def test_thumbnail_dns_timeout_does_not_wait_for_resolver_to_finish(self) -> None:
+        release_lookup = threading.Event()
+
+        def slow_lookup(*_args) -> list:
+            release_lookup.wait(1.0)
+            return []
+
+        started = time.monotonic()
+        try:
+            with patch("downloader.socket.getaddrinfo", side_effect=slow_lookup):
+                with self.assertRaisesRegex(DownloaderError, "tiempo de espera agotado"):
+                    _resolve_hostname_with_timeout("images.example.com", timeout=0.01)
+        finally:
+            release_lookup.set()
+        self.assertLess(time.monotonic() - started, 0.5)
+
+
+class PlatformCompatibilityTests(unittest.TestCase):
+    ROUTE_MATRIX = (
+        ("youtube", "Youtube", "https://www.youtube.com/watch?v=compatibility-test"),
+        ("youtube", "Youtube", "https://www.youtube.com/shorts/compatibility-test"),
+        ("tiktok", "TikTok", "https://www.tiktok.com/@example/video/1234567890"),
+        ("instagram", "Instagram", "https://www.instagram.com/p/compatibilitytest/"),
+        ("instagram", "Instagram", "https://www.instagram.com/reel/compatibilitytest/"),
+        ("x", "Twitter", "https://x.com/example/status/1234567890"),
+        ("x", "Twitter", "https://twitter.com/example/status/1234567890"),
+    )
+
+    def test_supported_routes_match_the_installed_ytdlp_extractors(self) -> None:
+        from yt_dlp.extractor import get_info_extractor
+
+        for platform_id, extractor_key, url in self.ROUTE_MATRIX:
+            with self.subTest(platform=platform_id, url=url):
+                self.assertEqual(validate_url(url).platform.id, platform_id)
+                extractor = get_info_extractor(extractor_key)()
+                self.assertTrue(extractor.suitable(url))
+
+    def test_video_selector_accepts_synthetic_h264_aac_formats_for_each_platform(self) -> None:
+        import yt_dlp
+
+        formats = [
+            {
+                "format_id": "video-720",
+                "url": "https://media.example.invalid/video",
+                "ext": "mp4",
+                "vcodec": "avc1.64001f",
+                "acodec": "none",
+                "height": 720,
+                "width": 1280,
+                "protocol": "https",
+            },
+            {
+                "format_id": "audio-aac",
+                "url": "https://media.example.invalid/audio",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "protocol": "https",
+            },
+        ]
+        for platform_id in ("youtube", "tiktok", "instagram", "x"):
+            with self.subTest(platform=platform_id):
+                request = DownloadRequest(
+                    "https://youtu.be/compatibility-test",
+                    "video",
+                    Path("C:/Downloads"),
+                    quality=720,
+                )
+                options = build_download_options(
+                    request, ToolPaths(None, None, None), platform_id=platform_id
+                )
+                with yt_dlp.YoutubeDL({"quiet": True}) as client:
+                    selected = list(
+                        client.build_format_selector(options["format"])({"formats": formats})
+                    )
+                self.assertEqual(len(selected), 1)
+                self.assertEqual(
+                    [item["format_id"] for item in selected[0]["requested_formats"]],
+                    ["video-720", "audio-aac"],
+                )
 
 
 class OptionTests(unittest.TestCase):
@@ -179,6 +265,55 @@ class OptionTests(unittest.TestCase):
         options = build_download_options(request, self.tools)
         self.assertEqual(options["postprocessors"][0]["preferredquality"], "192")
 
+    def test_download_media_registers_progress_and_postprocessor_hooks(self) -> None:
+        captured_events = []
+        captured_options = {}
+
+        class FakeYoutubeDL:
+            def __init__(self, options) -> None:
+                captured_options.update(options)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args) -> None:
+                return None
+
+            def download(self, _urls) -> int:
+                for hook in captured_options["progress_hooks"]:
+                    hook(
+                        {
+                            "status": "downloading",
+                            "downloaded_bytes": 50,
+                            "total_bytes": 100,
+                        }
+                    )
+                for hook in captured_options["postprocessor_hooks"]:
+                    hook({})
+                return 0
+
+        fake_yt_dlp = type("FakeYtDlp", (), {"YoutubeDL": FakeYoutubeDL})
+        request = DownloadRequest(
+            "https://youtu.be/x", "audio", Path("C:/Downloads"), audio_bitrate=192
+        )
+        with tempfile.TemporaryDirectory() as destination:
+            request = DownloadRequest(
+                request.url, request.output_type, Path(destination), request.quality,
+                request.audio_bitrate,
+            )
+            with patch("downloader._load_yt_dlp", return_value=fake_yt_dlp):
+                download_media(
+                    request,
+                    self.tools,
+                    callback=captured_events.append,
+                )
+
+        self.assertEqual(len(captured_options["progress_hooks"]), 1)
+        self.assertEqual(len(captured_options["postprocessor_hooks"]), 1)
+        self.assertEqual(captured_events[1].status, "downloading")
+        self.assertEqual(captured_events[2].status, "processing")
+        self.assertEqual(captured_events[-1].status, "finished")
+
 
 class MediaInfoTests(unittest.TestCase):
     def test_real_nonstandard_qualities_are_reported(self) -> None:
@@ -218,12 +353,26 @@ class SafeErrorTests(unittest.TestCase):
             "ffmpeg exited with code 1": "FFmpeg",
             "HTTP Error 429: Too Many Requests": "temporalmente",
             "This video is age-restricted": "sesión",
+            "Requested format is not available": "formatos públicos compatibles",
+            "Please update yt-dlp": "versión más reciente",
         }
         for detail, expected in cases.items():
             with self.subTest(detail=detail):
                 message = safe_error_message(RuntimeError(detail))
                 self.assertIn(expected, message)
                 self.assertNotIn(detail, message)
+
+    def test_compatibility_errors_are_localized_in_all_languages(self) -> None:
+        cases = (
+            ("Requested format is not available", "error_formats"),
+            ("No formats found", "error_formats"),
+            ("Please update yt-dlp", "error_update"),
+        )
+        for raw_error, key in cases:
+            with self.subTest(error=raw_error):
+                message = safe_error_message(RuntimeError(raw_error))
+                for language in LANGUAGE_NAMES:
+                    self.assertEqual(localize_engine_error(message, language), tr(key, language))
 
 
 class SettingsTests(unittest.TestCase):

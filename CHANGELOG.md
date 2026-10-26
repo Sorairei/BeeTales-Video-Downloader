@@ -12,6 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- Offline compatibility matrix checks for supported platform URL routes against the installed yt-dlp extractors.
+- Weekly CI runs to detect extractor and format-selection regressions as yt-dlp evolves.
 - Documented keyboard shortcuts for URL focus, analysis, queueing, destination selection, and help.
 - Automated WCAG AA contrast validation for normal-size text in light and dark themes.
 - In-memory public thumbnail previews for YouTube, TikTok, Instagram, and X.
@@ -23,6 +25,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Classified unsupported-format and outdated-engine failures with localized recovery guidance.
 - Expanded and standardized privacy, security, acceptable-use, and contribution documentation in English.
 - Improved success and error colors with theme-specific accessible variants.
 - Reorganized the desktop workspace into a clearer three-step premium BeeTales experience.

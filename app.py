@@ -8,7 +8,6 @@ import queue
 import subprocess
 import sys
 import threading
-import time
 import tkinter as tk
 import traceback
 import webbrowser
@@ -281,14 +280,6 @@ class QueueCard(ctk.CTkFrame):
 class SplashScreen(tk.Toplevel):
     """Loading window displayed while the application initialises."""
 
-    _STEPS = [
-        (0.20, "Loading tools..."),
-        (0.55, "Initializing workspace..."),
-        (0.85, "Applying preferences..."),
-        (1.00, "Ready"),
-    ]
-    _STEP_MS = 380
-
     def __init__(self, root: tk.Tk, logo_path: Path) -> None:
         super().__init__(root)
         self.overrideredirect(True)
@@ -348,28 +339,21 @@ class SplashScreen(tk.Toplevel):
             font=("Segoe UI", 9),
         ).pack()
 
-        self._step_index = 0
         self._done_event = threading.Event()
-        self.after(120, self._advance)
-
-    def _advance(self) -> None:
-        if self._step_index >= len(self._STEPS):
-            return
-        target_ratio, label = self._STEPS[self._step_index]
-        self._fill.place(relwidth=target_ratio)
-        self._status_var.set(label)
-        self._step_index += 1
-        if self._step_index < len(self._STEPS):
-            self.after(self._STEP_MS, self._advance)
-        else:
-            # Wait for tool detection to finish (max 2 s)
-            self.after(200, self._wait_for_tools)
+        self._status_var.set("Checking local media tools...")
+        self.after(80, self._wait_for_tools)
 
     def _wait_for_tools(self) -> None:
         if self._done_event.is_set():
-            self.after(150, self.destroy)
+            self._fill.place(relwidth=1)
+            self._status_var.set("Ready")
+            self.after(120, self._finish_loading)
         else:
             self.after(80, self._wait_for_tools)
+
+    def _finish_loading(self) -> None:
+        self.destroy()
+        self.master.quit()
 
     def signal_ready(self) -> None:
         """Called from the tool-detection thread when detection is complete."""
@@ -391,13 +375,17 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self.analysis_generation = 0
         self.analysis_thread: threading.Thread | None = None
         self.closing = False
+        self._progress_lock = threading.Lock()
+        self._latest_progress: dict[int, ProgressEvent] = {}
         self._draw_pending: str | None = None
+        self._layout_pending: str | None = None
+        self._compact_layout = False
         self._shutdown_deadline: str | None = None
         self.tools: Any = None
 
         self.title(f"{tr('app_title', self.language)} v{APP_VERSION}")
         self.geometry("1320x820")
-        self.minsize(1100, 720)
+        self.minsize(900, 640)
         self.configure(fg_color=APP_BACKGROUND)
         self._set_icon()
         self.grid_columnconfigure(1, weight=1)
@@ -405,6 +393,8 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self._apply_appearance(self.preferences.appearance)
         self._build_sidebar()
         self._build_workspace()
+        self._apply_responsive_layout()
+        self.bind("<Configure>", self._on_window_resize, add="+")
         self._bind_keyboard_shortcuts()
         self._apply_translations()
         self.protocol("WM_DELETE_WINDOW", self._request_close)
@@ -545,6 +535,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
 
         content = ctk.CTkFrame(workspace, fg_color="transparent")
         content.grid(row=1, column=0, padx=40, pady=(0, 20), sticky="nsew")
+        self.content = content
         content.grid_columnconfigure(0, weight=7, uniform="workspace")
         content.grid_columnconfigure(1, weight=4, uniform="workspace")
         content.grid_rowconfigure(0, weight=1)
@@ -559,16 +550,16 @@ class BeeTalesDownloaderApp(ctk.CTk):
         self._build_output_card()
         self._build_local_flow_card()
 
-        queue_panel = ctk.CTkFrame(
+        self.queue_panel = ctk.CTkFrame(
             content,
             fg_color=SURFACE,
             border_width=0,
             corner_radius=CARD_RADIUS,
         )
-        queue_panel.grid(row=0, column=1, sticky="nsew")
-        queue_panel.grid_columnconfigure(0, weight=1)
-        queue_panel.grid_rowconfigure(2, weight=1)
-        queue_header = ctk.CTkFrame(queue_panel, fg_color="transparent")
+        self.queue_panel.grid(row=0, column=1, sticky="nsew")
+        self.queue_panel.grid_columnconfigure(0, weight=1)
+        self.queue_panel.grid_rowconfigure(2, weight=1)
+        queue_header = ctk.CTkFrame(self.queue_panel, fg_color="transparent")
         queue_header.grid(row=0, column=0, padx=16, pady=(16, 4), sticky="ew")
         queue_header.grid_columnconfigure(0, weight=1)
         self.queue_heading_label = ctk.CTkLabel(
@@ -586,7 +577,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
             font=ctk.CTkFont(family=FONT_FAMILY, size=11),
         )
         self.queue_summary_label.grid(row=1, column=0, pady=(1, 0), sticky="w")
-        queue_commands = ctk.CTkFrame(queue_panel, fg_color="transparent")
+        queue_commands = ctk.CTkFrame(self.queue_panel, fg_color="transparent")
         queue_commands.grid(row=1, column=0, padx=16, pady=(7, 10), sticky="ew")
         queue_commands.grid_columnconfigure(0, weight=1)
         self.clear_queue_button = ctk.CTkButton(
@@ -617,7 +608,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
         )
         self.help_button.grid(row=0, column=1)
         self.queue_frame = ctk.CTkScrollableFrame(
-            queue_panel, fg_color=SURFACE_ALT, corner_radius=12
+            self.queue_panel, fg_color=SURFACE_ALT, corner_radius=12
         )
         self.queue_frame.grid(row=2, column=0, padx=12, pady=(0, 12), sticky="nsew")
         self.queue_frame.grid_columnconfigure(0, weight=1)
@@ -647,6 +638,37 @@ class BeeTalesDownloaderApp(ctk.CTk):
             status_bar, text="", text_color=TEXT_MUTED, anchor="w"
         )
         self.status_label.pack(side="left", padx=(0, 12), pady=7, fill="x", expand=True)
+
+    def _on_window_resize(self, event: tk.Event) -> None:
+        if event.widget is not self or self.closing:
+            return
+        if self._layout_pending:
+            self.after_cancel(self._layout_pending)
+        self._layout_pending = self.after(100, self._apply_responsive_layout)
+
+    def _apply_responsive_layout(self) -> None:
+        self._layout_pending = None
+        width = self.winfo_width()
+        if width <= 1:
+            width = self.winfo_reqwidth()
+        compact = width < 1200
+        if compact == self._compact_layout and hasattr(self, "queue_panel"):
+            return
+        self._compact_layout = compact
+        if compact:
+            self.content.grid_columnconfigure(0, weight=1, uniform="")
+            self.content.grid_columnconfigure(1, weight=0, uniform="")
+            self.content.grid_rowconfigure(0, weight=3)
+            self.content.grid_rowconfigure(1, weight=2, minsize=150)
+            self.workflow.grid_configure(row=0, column=0, padx=0, pady=0)
+            self.queue_panel.grid_configure(row=1, column=0, padx=0, pady=(12, 0))
+        else:
+            self.content.grid_columnconfigure(0, weight=7, uniform="workspace")
+            self.content.grid_columnconfigure(1, weight=4, uniform="workspace")
+            self.content.grid_rowconfigure(0, weight=1, minsize=0)
+            self.content.grid_rowconfigure(1, weight=0, minsize=0)
+            self.workflow.grid_configure(row=0, column=0, padx=(0, 12), pady=0)
+            self.queue_panel.grid_configure(row=0, column=1, padx=0, pady=0)
 
     def _build_source_card(self) -> None:
         card = ctk.CTkFrame(
@@ -1156,7 +1178,7 @@ class BeeTalesDownloaderApp(ctk.CTk):
                     job.request,
                     self.tools,
                     job.cancel_event,
-                    lambda event, job_id=job.job_id: self.events.put(("progress", job_id, event)),
+                    lambda event, job_id=job.job_id: self._publish_progress(job_id, event),
                 )
                 self.queue_manager.finish(job.job_id, "completed")
                 self.events.put(("finished", job.job_id, job.request.destination))
@@ -1176,6 +1198,8 @@ class BeeTalesDownloaderApp(ctk.CTk):
     def _cancel_job(self, job_id: int) -> None:
         card = self.queue_cards.get(job_id)
         if card and self.queue_manager.cancel(job_id):
+            with self._progress_lock:
+                self._latest_progress.pop(job_id, None)
             card.retranslate(self.language)
 
     def _clear_finished_jobs(self) -> None:
@@ -1206,6 +1230,10 @@ class BeeTalesDownloaderApp(ctk.CTk):
 
     _MAX_EVENTS_PER_TICK = 20
 
+    def _publish_progress(self, job_id: int, event: ProgressEvent) -> None:
+        with self._progress_lock:
+            self._latest_progress[job_id] = event
+
     def _process_events(self) -> None:
         processed = 0
         try:
@@ -1231,17 +1259,23 @@ class BeeTalesDownloaderApp(ctk.CTk):
                     if card:
                         card.update_progress(event[2])
                 elif kind == "finished":
+                    with self._progress_lock:
+                        self._latest_progress.pop(event[1], None)
                     card = self.queue_cards.get(event[1])
                     if card:
                         card.finish(event[2])
                     self._set_status(tr("download_complete", self.language), success=True)
                     self._refresh_queue_header()
                 elif kind == "cancelled":
+                    with self._progress_lock:
+                        self._latest_progress.pop(event[1], None)
                     card = self.queue_cards.get(event[1])
                     if card:
                         card.fail("", cancelled=True)
                     self._refresh_queue_header()
                 elif kind in {"failed", "failed_unexpected"}:
+                    with self._progress_lock:
+                        self._latest_progress.pop(event[1], None)
                     card = self.queue_cards.get(event[1])
                     message = (
                         localize_engine_error(event[2], self.language)
@@ -1255,6 +1289,13 @@ class BeeTalesDownloaderApp(ctk.CTk):
                     self._refresh_queue_header()
         except queue.Empty:
             pass
+        with self._progress_lock:
+            latest_progress = self._latest_progress
+            self._latest_progress = {}
+        for job_id, progress in latest_progress.items():
+            card = self.queue_cards.get(job_id)
+            if card and card.job.state == "downloading":
+                card.update_progress(progress)
         if not self.closing:
             self.after(100, self._process_events)
 
@@ -1426,13 +1467,7 @@ def main() -> None:
 
     threading.Thread(target=_detect, daemon=True).start()
 
-    # Actively wait until the splash animation finishes and tools have been detected
-    while splash.winfo_exists():
-        try:
-            _root.update()
-            time.sleep(0.016)  # ~60 fps cap — prevents 100% CPU during splash
-        except tk.TclError:
-            break
+    _root.mainloop()
 
     _root.destroy()
 

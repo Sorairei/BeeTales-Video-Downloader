@@ -72,7 +72,7 @@ Processing runs on the user's computer through yt-dlp, FFmpeg, FFprobe, and Deno
 | Languages | English by default, with complete Spanish, Polish, and Portuguese interfaces |
 | Reliability | Active duplicates are rejected and application shutdown waits for local operations |
 | Privacy | Destination, language, and appearance preferences are local; URLs and download history are not stored |
-| Interface | Enterprise two-zone BeeTales workspace with light, dark, and system appearance modes |
+| Interface | Adaptive BeeTales workspace with a stacked queue on narrow windows and light, dark, and system appearance modes |
 | Funding | Optional GitHub Sponsors support without advertisements, premium features, or preferential access |
 
 ## Supported sources and outputs
@@ -258,7 +258,7 @@ All project tests and release checks can be executed locally:
 
 | Check | Purpose |
 | --- | --- |
-| Unit tests | Validate public URL shapes, real qualities, output options, safe errors, preferences, queue states, duplicates, and cancellation |
+| Unit tests | Validate public URL shapes, yt-dlp extractor recognition for supported route examples, real qualities, format options, safe errors, preferences, queue states, duplicates, and cancellation |
 | Python compilation | Confirm every application module parses successfully |
 | Source smoke test | Verify assets, dependencies, runtime identities, settings, and multimedia options |
 | Synthetic MP4 and MP3 test | Use bundled FFmpeg and FFprobe without downloading third-party content |
@@ -266,7 +266,7 @@ All project tests and release checks can be executed locally:
 | Visual QA | Capture isolated appearance and language profiles and confirm child processes are cleaned up |
 | Release package | Produce the Windows executable, versioned ZIP, manifest, and checksum file |
 
-Unit tests do not contact supported platforms or perform real downloads. Public-platform metadata checks, when intentionally performed, analyze individual test links without saving their media.
+Unit tests do not contact supported platforms or perform real downloads. The extractor compatibility matrix uses synthetic URLs and checks the locally installed yt-dlp extractors; weekly CI installs the newest version allowed by `requirements.txt` to catch compatibility regressions. Public-platform metadata checks, when intentionally performed, analyze authorized individual test links without saving their media.
 
 ## Accessibility
 

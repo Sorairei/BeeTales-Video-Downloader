@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import ipaddress
 import os
@@ -209,20 +208,34 @@ def validate_url(value: str) -> ValidatedUrl:
 def _resolve_hostname_with_timeout(hostname: str, timeout: float = 5.0) -> list:
     """DNS lookup with an explicit timeout to prevent indefinite blocking.
 
-    socket.getaddrinfo has no built-in timeout parameter. Wrapping it in a
-    ThreadPoolExecutor lets us cancel the wait after *timeout* seconds so that
-    a slow or unresponsive DNS server cannot stall the analysis worker thread.
+    socket.getaddrinfo has no built-in timeout parameter. A daemon worker lets
+    the caller stop waiting without blocking on executor shutdown.
     """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            socket.getaddrinfo, hostname, 443, socket.AF_UNSPEC, socket.SOCK_STREAM
-        )
+    completed = threading.Event()
+    result: list | None = None
+    error: Exception | None = None
+
+    def resolve() -> None:
+        nonlocal result, error
         try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError as exc:
-            raise DownloaderError(
-                "No fue posible localizar la portada pública (tiempo de espera agotado)."
-            ) from exc
+            result = socket.getaddrinfo(
+                hostname, 443, socket.AF_UNSPEC, socket.SOCK_STREAM
+            )
+        except Exception as exc:
+            error = exc
+        finally:
+            completed.set()
+
+    threading.Thread(target=resolve, daemon=True).start()
+    if not completed.wait(timeout):
+        raise DownloaderError(
+            "No fue posible localizar la portada pública (tiempo de espera agotado)."
+        )
+    if error:
+        raise error
+    if result is None:
+        raise DownloaderError("No fue posible localizar la portada pública.")
+    return result
 
 
 def _validate_thumbnail_url(value: str) -> str:
@@ -604,6 +617,16 @@ def _safe_text(value: object, fallback: str = "") -> str:
 
 def safe_error_message(error: Exception, action: str = "descarga") -> str:
     detail = str(error).lower()
+    if any(
+        term in detail
+        for term in (
+            "please update yt-dlp",
+            "yt-dlp is out of date",
+            "your yt-dlp version",
+            "update yt-dlp",
+        )
+    ):
+        return "La plataforma requiere una versión más reciente del motor. Actualiza BeeTales e inténtalo de nuevo."
     if "drm" in detail:
         return "El contenido está protegido con DRM y no puede procesarse."
     if "ffmpeg" in detail or "ffprobe" in detail:
@@ -624,6 +647,17 @@ def safe_error_message(error: Exception, action: str = "descarga") -> str:
         return "El contenido es privado o requiere iniciar sesión; BeeTales no usa cuentas ni cookies."
     if any(term in detail for term in ("no video", "does not contain a video", "without video")):
         return "La publicación no contiene un video público descargable."
+    if any(
+        term in detail
+        for term in (
+            "requested format is not available",
+            "requested format not available",
+            "no formats found",
+            "there are no formats",
+            "format is not available",
+        )
+    ):
+        return "No se encontraron formatos públicos compatibles. Prueba otra calidad y actualiza BeeTales si el problema continúa."
     if any(
         term in detail
         for term in ("unavailable", "deleted", "not found", "removed", "copyright")
@@ -764,8 +798,9 @@ def download_media(
             audio_bitrate=request.audio_bitrate,
         ),
         tools,
-        [progress_hook],
-        [postprocessor_hook],
+        platform_id=validated.platform.id,
+        progress_hooks=[progress_hook],
+        postprocessor_hooks=[postprocessor_hook],
     )
     try:
         notify(ProgressEvent("starting", 0.0, message="Preparando descarga…"))
