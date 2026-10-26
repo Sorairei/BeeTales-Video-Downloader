@@ -480,7 +480,7 @@ class QueueManagerTests(unittest.TestCase):
 
 class ReleaseMetadataTests(unittest.TestCase):
     def test_version_is_consistent_across_release_metadata(self) -> None:
-        self.assertEqual(version_tuple(), (0, 4, 0, 0))
+        self.assertEqual(version_tuple(), (0, 5, 0, 0))
         self.assertIn(f'ProductVersion", "{APP_VERSION}"', render_windows_version_info())
         self.assertEqual(
             archive_name(), f"BeeTales-Video-Downloader-v{APP_VERSION}-Windows-x64.zip"

@@ -10,8 +10,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Additional platform compatibility maintenance as public sites evolve.
 
+## [0.5.0] - 2026-10-25
+
 ### Added
 
+- Adaptive layout for narrower application windows.
+- Download progress coalescing and correct progress/post-processing hook registration.
+- Offline compatibility checks for supported platform routes, yt-dlp extractors, and synthetic MP4 formats.
+- Weekly CI compatibility checks and clearer localized guidance for unavailable formats or outdated media engines.
 - Offline compatibility matrix checks for supported platform URL routes against the installed yt-dlp extractors.
 - Weekly CI runs to detect extractor and format-selection regressions as yt-dlp evolves.
 - Documented keyboard shortcuts for URL focus, analysis, queueing, destination selection, and help.
@@ -25,6 +31,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Replaced the timed splash-screen animation and manual event loop with actual local tool detection.
+- Enforced the thumbnail DNS lookup timeout without waiting for a blocked resolver thread.
 - Classified unsupported-format and outdated-engine failures with localized recovery guidance.
 - Expanded and standardized privacy, security, acceptable-use, and contribution documentation in English.
 - Improved success and error colors with theme-specific accessible variants.
@@ -96,6 +104,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Kept URLs and queue history out of persistent preferences.
 - Excluded private content, cookies, account sessions, DRM bypasses, and artificial watermark removal.
 
-[Unreleased]: https://github.com/Sorairei/BeeTales-Video-Downloader/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Sorairei/BeeTales-Video-Downloader/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Sorairei/BeeTales-Video-Downloader/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Sorairei/BeeTales-Video-Downloader/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Sorairei/BeeTales-Video-Downloader/releases/tag/v0.3.0

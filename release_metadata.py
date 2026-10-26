@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 PRODUCT_NAME = "BeeTales Video Downloader"
 WINDOWS_PLATFORM = "windows-x64"
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
