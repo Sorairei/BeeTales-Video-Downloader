@@ -18,8 +18,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Download progress coalescing and correct progress/post-processing hook registration.
 - Offline compatibility checks for supported platform routes, yt-dlp extractors, and synthetic MP4 formats.
 - Weekly CI compatibility checks and clearer localized guidance for unavailable formats or outdated media engines.
-- Offline compatibility matrix checks for supported platform URL routes against the installed yt-dlp extractors.
-- Weekly CI runs to detect extractor and format-selection regressions as yt-dlp evolves.
 - Documented keyboard shortcuts for URL focus, analysis, queueing, destination selection, and help.
 - Automated WCAG AA contrast validation for normal-size text in light and dark themes.
 - In-memory public thumbnail previews for YouTube, TikTok, Instagram, and X.
